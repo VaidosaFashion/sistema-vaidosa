@@ -1736,37 +1736,115 @@
     let auth, firestoreDb;
     
     // Inicializar quando Firebase estiver pronto
+    waitForFirebase().then(() => {
+      const firebaseConfig = {
+        apiKey: "AIzaSyBvkXQmEVWO0sRJGUQ1IcMswXReswRL_NE",
+        authDomain: "sistema-vaidosa.firebaseapp.com",
+        projectId: "sistema-vaidosa",
+        storageBucket: "sistema-vaidosa.firebasestorage.app",
+        messagingSenderId: "295524313124",
+        appId: "1:295524313124:web:ab42001bfe68fbe70c10b1"
+      };
+
+      firebase.initializeApp(firebaseConfig);
+      auth = firebase.auth();
+      firestoreDb = firebase.firestore();
+
+      // Se vier de um signInWithRedirect, captura resultado/erros sem alterar layout
+      auth.getRedirectResult()
+        .then(async (res) => {
+          if (res && res.user) {
+            console.log('✅ Login via redirect concluído:', res.user);
+            await salvarLog(res.user, 'Login via redirect realizado');
+          }
+        })
+        .catch((err) => {
+          console.error('Erro no redirect:', err);
+          if (err && err.code === 'auth/unauthorized-domain') {
+            alert('Domínio não autorizado no Firebase.\n\nNo Firebase Console: Authentication → Settings → Authorized domains\nAdicione: ' + window.location.hostname);
+          }
+        });
+
+      
+      console.log('✅ Firebase inicializado (COMPAT)');
+      
+      // Setup listener de auth
+      auth.onAuthStateChanged(async (user) => {
+        currentUser = user;
+        userIsAuthenticated = !!user;
+        
+        if (user) {
+          console.log('✅ Autenticado:', user.email);
+          showApp();
+          await loadAllDataFromFirestore();
+        } else {
+          console.log('❌ Não autenticado');
+          showLogin();
+        }
+      });
+    });
+
+    /* ═══════════════════════════════════════
+       FUNÇÕES FIRESTORE
+    ═══════════════════════════════════════ */
     
-// Desabilita o botão até o Firebase estar pronto (evita clique antes do auth/firestore existirem)
-const __googleBtn = document.querySelector('.google-btn');
-if (__googleBtn) __googleBtn.disabled = true;
-
-// Inicialização única do Firebase (promessa global, usada também no login)
-const firebaseInitPromise = waitForFirebase().then(() => {
-    if (!firebase.apps.length) {
-        firebase.initializeApp(firebaseConfig);
-    }
-    auth = firebase.auth();
-    firestoreDb = firebase.firestore();
-
-    if (__googleBtn) __googleBtn.disabled = false;
-}).catch((err) => {
-    console.error("Erro ao inicializar Firebase:", err);
-    if (__googleBtn) __googleBtn.disabled = true;
-    alert("Erro ao inicializar o sistema. Verifique as credenciais do Firebase e tente novamente.");
-});
-
-async function loginWithGoogle() {
-      const provider = new firebase.auth.GoogleAuthProvider();
+    let currentUser = null;
+    let userIsAuthenticated = false;
+    
+    // Login com Google
+    async function loginWithGoogle() {
       try {
-        await firebaseInitPromise;
-        if (!auth) throw new Error('Firebase Auth não inicializado');
-        const result = await auth.signInWithPopup(provider);
-        console.log('✅ Login:', result.user.email);
+        // Firebase Auth não funciona em file:// (precisa rodar via http/https)
+        if (window.location.protocol === 'file:') {
+          alert('Este login do Google só funciona quando o sistema é aberto via um endereço http/https.
+
+Abra pelo GitHub Pages/Firebase Hosting ou use um servidor local (ex.: Live Server).');
+          return;
+        }
+
+        const provider = new firebase.auth.GoogleAuthProvider();
+        auth.useDeviceLanguage();
+
+        try {
+          const result = await auth.signInWithPopup(provider);
+          console.log('Usuário logado:', result.user);
+          await salvarLog(result.user, 'Login realizado');
+        } catch (err) {
+          // Fallbacks e mensagens específicas
+          console.error('Erro no popup:', err);
+
+          if (err && err.code === 'auth/unauthorized-domain') {
+            alert('Domínio não autorizado no Firebase.
+
+No Firebase Console: Authentication → Settings → Authorized domains
+Adicione: ' + window.location.hostname + '
+
+Depois tente novamente.');
+            return;
+          }
+
+          // Em alguns navegadores/ambientes o popup é bloqueado: tenta redirect
+          const redirectCodes = [
+            'auth/operation-not-supported-in-this-environment',
+            'auth/popup-blocked',
+            'auth/popup-closed-by-user',
+            'auth/cancelled-popup-request'
+          ];
+          if (err && redirectCodes.includes(err.code)) {
+            await auth.signInWithRedirect(provider);
+            return;
+          }
+
+          // Qualquer outro erro: mantém genérico, mas com código para diagnóstico
+          alert('Erro ao fazer login. (' + (err && err.code ? err.code : 'sem código') + ')
+Tente novamente.');
+        }
       } catch (error) {
-        console.error('❌ Erro login:', error);
+        console.error('Erro geral no login:', error);
         alert('Erro ao fazer login. Tente novamente.');
       }
+    }
+
     }
     
     // Logout
