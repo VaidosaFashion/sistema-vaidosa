@@ -1736,49 +1736,31 @@
     let auth, firestoreDb;
     
     // Inicializar quando Firebase estiver pronto
-    waitForFirebase().then(() => {
-      const firebaseConfig = {
-        apiKey: "AIzaSyBvkXQmEVWO0sRJGUQ1IcMswXReswRL_NE",
-        authDomain: "sistema-vaidosa.firebaseapp.com",
-        projectId: "sistema-vaidosa",
-        storageBucket: "sistema-vaidosa.firebasestorage.app",
-        messagingSenderId: "295524313124",
-        appId: "1:295524313124:web:ab42001bfe68fbe70c10b1"
-      };
-
-      firebase.initializeApp(firebaseConfig);
-      auth = firebase.auth();
-      firestoreDb = firebase.firestore();
-      
-      console.log('✅ Firebase inicializado (COMPAT)');
-      
-      // Setup listener de auth
-      auth.onAuthStateChanged(async (user) => {
-        currentUser = user;
-        userIsAuthenticated = !!user;
-        
-        if (user) {
-          console.log('✅ Autenticado:', user.email);
-          showApp();
-          await loadAllDataFromFirestore();
-        } else {
-          console.log('❌ Não autenticado');
-          showLogin();
-        }
-      });
-    });
-
-    /* ═══════════════════════════════════════
-       FUNÇÕES FIRESTORE
-    ═══════════════════════════════════════ */
     
-    let currentUser = null;
-    let userIsAuthenticated = false;
-    
-    // Login com Google
-    async function loginWithGoogle() {
+// Desabilita o botão até o Firebase estar pronto (evita clique antes do auth/firestore existirem)
+const __googleBtn = document.querySelector('.google-btn');
+if (__googleBtn) __googleBtn.disabled = true;
+
+// Inicialização única do Firebase (promessa global, usada também no login)
+const firebaseInitPromise = waitForFirebase().then(() => {
+    if (!firebase.apps.length) {
+        firebase.initializeApp(firebaseConfig);
+    }
+    auth = firebase.auth();
+    firestoreDb = firebase.firestore();
+
+    if (__googleBtn) __googleBtn.disabled = false;
+}).catch((err) => {
+    console.error("Erro ao inicializar Firebase:", err);
+    if (__googleBtn) __googleBtn.disabled = true;
+    alert("Erro ao inicializar o sistema. Verifique as credenciais do Firebase e tente novamente.");
+});
+
+async function loginWithGoogle() {
       const provider = new firebase.auth.GoogleAuthProvider();
       try {
+        await firebaseInitPromise;
+        if (!auth) throw new Error('Firebase Auth não inicializado');
         const result = await auth.signInWithPopup(provider);
         console.log('✅ Login:', result.user.email);
       } catch (error) {
