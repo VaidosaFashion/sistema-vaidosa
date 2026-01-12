@@ -334,13 +334,9 @@
       min-height: 100vh;
       background: linear-gradient(135deg, var(--accent) 0%, var(--accent-light) 100%);
       position: fixed;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
+      top: 0; left: 0; right: 0; bottom: 0;
       z-index: 9999;
     }
-    
     .login-box {
       background: white;
       padding: 48px;
@@ -350,19 +346,16 @@
       max-width: 400px;
       width: 90%;
     }
-    
     .login-box h1 {
       font-size: 24px;
       margin-bottom: 8px;
       color: var(--txt);
     }
-    
     .login-box p {
       color: var(--muted);
       font-size: 14px;
       margin-bottom: 32px;
     }
-    
     .google-btn {
       background: white;
       border: 1px solid var(--line);
@@ -378,84 +371,29 @@
       transition: all 0.2s ease;
       width: 100%;
     }
-    
     .google-btn:hover {
       background: var(--bg);
       box-shadow: var(--shadow);
     }
-    
-    .google-icon {
-      width: 20px;
-      height: 20px;
-    }
-    
-    #appContainer {
-      display: none;
-    }
-    
-    #appContainer.show {
-      display: block;
-    }
-    
-    #loginScreen.hide {
-      display: none;
-    }
+    #appContainer.hide { display: none; }
+    #loginScreen.hide { display: none; }
 
   </style>
 
-  <!-- Firebase SDK v10.7.1+ -->
-  <script type="module">
-    import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
-    import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js';
-    import { getFirestore, doc, setDoc, getDoc, collection, query, where, getDocs, deleteDoc, writeBatch, onSnapshot } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
+  <!-- Firebase SDK v9 COMPAT -->
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
 
-    // Configuração Firebase
-    const firebaseConfig = {
-      apiKey: "AIzaSyBvkXQmEVWO0sRJGUQ1IcMswXReswRL_NE",
-      authDomain: "sistema-vaidosa.firebaseapp.com",
-      projectId: "sistema-vaidosa",
-      storageBucket: "sistema-vaidosa.firebasestorage.app",
-      messagingSenderId: "295524313124",
-      appId: "1:295524313124:web:ab42001bfe68fbe70c10b1"
-    };
-
-    // Inicializar Firebase
-    const app = initializeApp(firebaseConfig);
-    const auth = getAuth(app);
-    const dbFirestore = getFirestore(app);
-
-    // Exportar para uso global
-    window.firebaseAuth = auth;
-    window.firebaseDb = dbFirestore;
-    window.firebaseUtils = {
-      signInWithPopup,
-      GoogleAuthProvider,
-      onAuthStateChanged,
-      signOut,
-      doc,
-      setDoc,
-      getDoc,
-      collection,
-      query,
-      where,
-      getDocs,
-      deleteDoc,
-      writeBatch,
-      onSnapshot
-    };
-
-    console.log('✅ Firebase inicializado');
-  </script>
 </head>
 <body>
 
-  <!-- Tela de Login -->
   <div id="loginScreen">
     <div class="login-box">
       <h1>Vaidosa Gestão</h1>
       <p>Sistema completo de gestão para moda plus size</p>
       <button class="google-btn" onclick="loginWithGoogle()">
-        <svg class="google-icon" viewBox="0 0 24 24">
+        <svg style="width:20px;height:20px" viewBox="0 0 24 24">
           <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
           <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
           <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
@@ -465,9 +403,7 @@
       </button>
     </div>
   </div>
-  
-  <!-- App Container -->
-  <div id="appContainer">
+  <div id="appContainer" class="hide">
 
 <aside class="sidebar">
   <div class="sidebar-header">
@@ -508,19 +444,6 @@
       Backup & Dados
     </button>
   </nav>
-  
-  <!-- User Info & Logout -->
-  <div style="position: absolute; bottom: 0; left: 0; right: 0; padding: 16px 20px; border-top: 1px solid var(--line); background: white;">
-    <div id="userInfo" style="display: none; margin-bottom: 12px;">
-      <div style="font-size: 11px; color: var(--muted); margin-bottom: 4px;">Logado como:</div>
-      <div id="userName" style="font-size: 12px; font-weight: 500; color: var(--txt); margin-bottom: 2px;"></div>
-      <div id="userEmail" style="font-size: 10px; color: var(--muted);"></div>
-    </div>
-    <button onclick="logoutUser()" style="width: 100%; padding: 8px 12px; background: transparent; border: 1.5px solid var(--line); color: var(--muted); border-radius: 8px; cursor: pointer; font-size: 12px; font-weight: 500; transition: all 0.2s ease;" onmouseover="this.style.background='#fef2f2'; this.style.borderColor='#fca5a5'; this.style.color='#dc2626'" onmouseout="this.style.background='transparent'; this.style.borderColor='var(--line)'; this.style.color='var(--muted)'">
-      <svg style="width: 14px; height: 14px; vertical-align: middle; margin-right: 6px;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
-      Sair
-    </button>
-  </div>
 </aside>
 
 <div class="main-container">
@@ -1787,233 +1710,281 @@
 <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 
-<script>
 
-  // ===== AUTENTICAÇÃO =====
-  window.currentUser = null;
-  window.userIsAuthenticated = false;
-
-  // Login com Google
-  window.loginWithGoogle = async function() {
-    const provider = new window.firebaseUtils.GoogleAuthProvider();
-    try {
-      const result = await window.firebaseUtils.signInWithPopup(window.firebaseAuth, provider);
-      console.log('✅ Login bem-sucedido:', result.user.email);
-      window.currentUser = result.user;
-      window.userIsAuthenticated = true;
-      showApp();
-      await loadAllDataFromFirestore();
-    } catch (error) {
-      console.error('❌ Erro no login:', error);
-      alert('Erro ao fazer login. Tente novamente.');
-    }
-  };
-
-  // Logout
-  window.logoutUser = async function() {
-    try {
-      await window.firebaseUtils.signOut(window.firebaseAuth);
-      console.log('✅ Logout bem-sucedido');
-      window.currentUser = null;
-      window.userIsAuthenticated = false;
-      showLogin();
-    } catch (error) {
-      console.error('❌ Erro no logout:', error);
-    }
-  };
-
-  // Mostrar tela de login
-  function showLogin() {
-    document.getElementById('loginScreen').classList.remove('hide');
-    document.getElementById('appContainer').classList.remove('show');
-  }
-
-  // Mostrar app
-  function showApp() {
-    document.getElementById('loginScreen').classList.add('hide');
-    document.getElementById('appContainer').classList.add('show');
+  <script>
+    /* ═══════════════════════════════════════
+       FIREBASE - AGUARDAR CARREGAMENTO
+    ═══════════════════════════════════════ */
     
-    // Atualizar info do usuário na sidebar
-    if (window.currentUser) {
-      const userInfo = document.getElementById('userInfo');
-      const userName = document.getElementById('userName');
-      const userEmail = document.getElementById('userEmail');
+    // Esperar Firebase carregar
+    function waitForFirebase() {
+      return new Promise((resolve) => {
+        if (typeof firebase !== 'undefined') {
+          resolve();
+        } else {
+          const checkInterval = setInterval(() => {
+            if (typeof firebase !== 'undefined') {
+              clearInterval(checkInterval);
+              resolve();
+            }
+          }, 100);
+        }
+      });
+    }
+
+    // Variáveis globais
+    let auth, firestoreDb;
+    
+    // Inicializar quando Firebase estiver pronto
+    waitForFirebase().then(() => {
+      const firebaseConfig = {
+        apiKey: "AIzaSyBvkXQmEVWO0sRJGUQ1IcMswXReswRL_NE",
+        authDomain: "sistema-vaidosa.firebaseapp.com",
+        projectId: "sistema-vaidosa",
+        storageBucket: "sistema-vaidosa.firebasestorage.app",
+        messagingSenderId: "295524313124",
+        appId: "1:295524313124:web:ab42001bfe68fbe70c10b1"
+      };
+
+      firebase.initializeApp(firebaseConfig);
+      auth = firebase.auth();
+      firestoreDb = firebase.firestore();
       
-      if (userInfo && userName && userEmail) {
-        userName.textContent = window.currentUser.displayName || 'Usuário';
-        userEmail.textContent = window.currentUser.email || '';
-        userInfo.style.display = 'block';
+      console.log('✅ Firebase inicializado (COMPAT)');
+      
+      // Setup listener de auth
+      auth.onAuthStateChanged(async (user) => {
+        currentUser = user;
+        userIsAuthenticated = !!user;
+        
+        if (user) {
+          console.log('✅ Autenticado:', user.email);
+          showApp();
+          await loadAllDataFromFirestore();
+        } else {
+          console.log('❌ Não autenticado');
+          showLogin();
+        }
+      });
+    });
+
+    /* ═══════════════════════════════════════
+       FUNÇÕES FIRESTORE
+    ═══════════════════════════════════════ */
+    
+    let currentUser = null;
+    let userIsAuthenticated = false;
+    
+    // Login com Google
+    async function loginWithGoogle() {
+      const provider = new firebase.auth.GoogleAuthProvider();
+      try {
+        const result = await auth.signInWithPopup(provider);
+        console.log('✅ Login:', result.user.email);
+      } catch (error) {
+        console.error('❌ Erro login:', error);
+        alert('Erro ao fazer login. Tente novamente.');
       }
     }
-  }
-
-  // Listener de autenticação
-  window.firebaseUtils.onAuthStateChanged(window.firebaseAuth, (user) => {
-    window.currentUser = user;
-    window.userIsAuthenticated = !!user;
     
-    if (user) {
-      console.log('✅ Usuário autenticado:', user.email);
-      showApp();
-      loadAllDataFromFirestore();
-    } else {
-      console.log('❌ Usuário não autenticado');
-      showLogin();
+    // Logout
+    async function logoutUser() {
+      try {
+        await auth.signOut();
+        console.log('✅ Logout OK');
+      } catch (error) {
+        console.error('❌ Erro logout:', error);
+      }
     }
-  });
+    
+    // Mostrar/Ocultar telas
+    function showLogin() {
+      document.getElementById('loginScreen').classList.remove('hide');
+      document.getElementById('appContainer').classList.add('hide');
+    }
+    
+    function showApp() {
+      document.getElementById('loginScreen').classList.add('hide');
+      document.getElementById('appContainer').classList.remove('hide');
+    }
+    
+    // Salvar no Firestore
+    async function saveToFirestore(collection, data) {
+      if (!currentUser) return false;
+      try {
+        await firestoreDb.collection('users').doc(currentUser.uid).collection(collection).doc('data').set(data, { merge: true });
+        console.log(`✅ ${collection} salvo`);
+        return true;
+      } catch (error) {
+        console.error(`❌ Erro ao salvar ${collection}:`, error);
+        return false;
+      }
+    }
+    
+    // Carregar do Firestore
+    async function loadFromFirestore(collection) {
+      if (!currentUser) return null;
+      try {
+        const doc = await firestoreDb.collection('users').doc(currentUser.uid).collection(collection).doc('data').get();
+        if (doc.exists) {
+          console.log(`✅ ${collection} carregado`);
+          return doc.data();
+        }
+        return null;
+      } catch (error) {
+        console.error(`❌ Erro ao carregar ${collection}:`, error);
+        return null;
+      }
+    }
+    
+    // Carregar todos os dados
+    async function loadAllDataFromFirestore() {
+      console.log('🔄 Carregando dados...');
+      try {
+        const mainData = await loadFromFirestore('main');
+        const settingsData = await loadFromFirestore('settings');
+        const counterData = await loadFromFirestore('counter');
+        
+        if (mainData && mainData.db) {
+          db = mainData.db;
+        }
+        if (settingsData && settingsData.settings) {
+          settings = settingsData.settings;
+        }
+        if (counterData && counterData.counter !== undefined) {
+          const stored = counterData.counter;
+          localStorage.setItem(CODE_COUNTER_KEY, String(stored));
+        }
+        
+        console.log('✅ Dados carregados');
+        renderAll();
+      } catch (error) {
+        console.error('❌ Erro ao carregar:', error);
+      }
+    }
+    
+    // Listener de autenticação agora está dentro do waitForFirebase()
+    
+    // Renderizar tudo
+    function renderAll() {
+      try {
+        renderHome();
+        renderProducts();
+        renderClients();
+        if(typeof renderVendedores === 'function') renderVendedores();
+        renderStock();
+        if(typeof renderReportDefaults === 'function') renderReportDefaults();
+        if(document.getElementById("lastCodeGenerated")){
+          document.getElementById("lastCodeGenerated").textContent = getLastGeneratedCode();
+        }
+        if(document.getElementById("blockSecondSwap")){
+          document.getElementById("blockSecondSwap").checked = settings.blockSecondSwap;
+        }
+      } catch (error) {
+        console.error('❌ Erro ao renderizar:', error);
+      }
+    }
 
+  /* ═══════════════════════════════════════
+     BANCO LOCAL (RESTO DO CÓDIGO)
+  ═══════════════════════════════════════ */
   /* =========================
      BANCO LOCAL
   ========================= */
-  
-  // ===== FIREBASE FIRESTORE =====
-  
-  // Salvar no Firestore
-  async function saveToFirestore(collectionName, data) {
-    if (!window.currentUser) {
-      console.error('❌ Usuário não autenticado');
-      return false;
-    }
+  const KEY = "vaidosa_lite_v4";
+  const SETTINGS_KEY = "vaidosa_settings_v1";
+  const CODE_COUNTER_KEY = "vaidosa_code_counter";
 
-    try {
-      const userId = window.currentUser.uid;
-      const docRef = window.firebaseUtils.doc(window.firebaseDb, `users/${userId}/${collectionName}/data`);
-      await window.firebaseUtils.setDoc(docRef, data, { merge: true });
-      console.log(`✅ ${collectionName} salvo no Firestore`);
-      return true;
-    } catch (error) {
-      console.error(`❌ Erro ao salvar ${collectionName}:`, error);
-      toast("Erro ao salvar", "Verifique sua conexão e tente novamente.");
-      return false;
+  function loadDB(){
+    const raw = localStorage.getItem(KEY);
+    if(!raw){
+      const db = { 
+        products:[], 
+        clients:[], 
+        vendedores:[], 
+        sales:[], 
+        stockMoves:[],
+        // MÓDULO FINANCEIRO
+        contas:[], // contas a pagar/receber (com recorrência)
+        movimentacoes:[], // registro de cada pagamento/recebimento
+        categorias:[] // categorias de despesas/receitas
+      };
+      localStorage.setItem(KEY, JSON.stringify(db));
+      return db;
     }
-  }
-
-  // Carregar do Firestore
-  async function loadFromFirestore(collectionName) {
-    if (!window.currentUser) {
-      console.error('❌ Usuário não autenticado');
-      return null;
-    }
-
-    try {
-      const userId = window.currentUser.uid;
-      const docRef = window.firebaseUtils.doc(window.firebaseDb, `users/${userId}/${collectionName}/data`);
-      const docSnap = await window.firebaseUtils.getDoc(docRef);
-      
-      if (docSnap.exists()) {
-        console.log(`✅ ${collectionName} carregado do Firestore`);
-        return docSnap.data();
-      } else {
-        console.log(`⚠️ ${collectionName} não encontrado no Firestore`);
-        return null;
-      }
-    } catch (error) {
-      console.error(`❌ Erro ao carregar ${collectionName}:`, error);
-      return null;
+    try{ 
+      const parsed = JSON.parse(raw);
+      if(!parsed.vendedores) parsed.vendedores = [];
+      // Adicionar estruturas financeiras se não existirem
+      if(!parsed.contas) parsed.contas = [];
+      if(!parsed.movimentacoes) parsed.movimentacoes = [];
+      if(!parsed.categorias) parsed.categorias = [];
+      return parsed;
+    }catch{ 
+      return { 
+        products:[], 
+        clients:[], 
+        vendedores:[], 
+        sales:[], 
+        stockMoves:[],
+        contas:[],
+        movimentacoes:[],
+        categorias:[]
+      }; 
     }
   }
 
-  // Carregar todos os dados
-  async function loadAllDataFromFirestore() {
-    console.log('🔄 Carregando dados do Firestore...');
-    
-    try {
-      const mainData = await loadFromFirestore('main');
-      const settingsData = await loadFromFirestore('settings');
-      const counterData = await loadFromFirestore('counter');
+  function loadCodeCounter(){
+    const raw = localStorage.getItem(CODE_COUNTER_KEY);
+    if(!raw) return 0;
+    try{ return parseInt(raw) || 0; }catch{ return 0; }
+  }
 
-      if (mainData && mainData.db) {
-        db = mainData.db;
-      }
-      
-      if (settingsData && settingsData.settings) {
-        settings = settingsData.settings;
-      }
+  function saveCodeCounter(n){
+    localStorage.setItem(CODE_COUNTER_KEY, String(n));
+  }
 
-      if (counterData && counterData.counter !== undefined) {
-        codeCounter = counterData.counter;
-      }
+  function generateNextCode(){
+    let counter = loadCodeCounter();
+    counter++;
+    saveCodeCounter(counter);
+    return "VF" + String(counter).padStart(6, "0");
+  }
 
-      console.log('✅ Dados carregados com sucesso');
-      
-      // Renderizar tudo
-      renderAll();
-      
-    } catch (error) {
-      console.error('❌ Erro ao carregar dados:', error);
-      toast("Erro ao carregar", "Não foi possível carregar seus dados.");
+  function getLastGeneratedCode(){
+    const counter = loadCodeCounter();
+    if(counter === 0) return "Nenhum ainda";
+    return "VF" + String(counter).padStart(6, "0");
+  }
+
+  function loadSettings(){
+    const raw = localStorage.getItem(SETTINGS_KEY);
+    const base = { blockSecondSwap:true };
+    if(!raw){ localStorage.setItem(SETTINGS_KEY, JSON.stringify(base)); return base; }
+    try{
+      const s = JSON.parse(raw);
+      return { ...base, ...s };
+    }catch{
+      localStorage.setItem(SETTINGS_KEY, JSON.stringify(base));
+      return base;
     }
   }
 
-  // Salvar DB no Firestore (substituir saveDB localStorage)
-  async function saveDB(reason) {
-    console.log(`💾 Salvando no Firestore: ${reason}`);
-    await saveToFirestore('main', { db: db });
-    scheduleBackup(reason);
-  }
-
-  // Salvar Settings
-  async function saveSettings(s) {
-    settings = s;
+  async function saveSettings(s){
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify(s));
     await saveToFirestore('settings', { settings: s });
   }
 
-  // Salvar Code Counter
-  async function saveCodeCounter(n) {
-    codeCounter = n;
-    await saveToFirestore('counter', { counter: n });
+  function uid(prefix="id"){ return prefix + "_" + Math.random().toString(16).slice(2) + "_" + Date.now().toString(16); }
+  function nowISO(){ return new Date().toISOString(); }
+  function toNum(v){ const n = Number(v); return Number.isFinite(n)?n:0; }
+  function fmtBRL(n){
+    const v = Number(n||0);
+    return v.toLocaleString("pt-BR",{style:"currency",currency:"BRL"});
   }
+  function escapeHtml(s){ return String(s??"").replace(/[&<>"']/g,m=>({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;" }[m])); }
 
-  // Carregar Code Counter
-  function loadCodeCounter() {
-    return codeCounter || 0;
-  }
-
-  // Carregar Settings
-  function loadSettings() {
-    return settings || { blockSecondSwap: true };
-  }
-
-  // LoadDB inicial (vai ser substituído pelo Firebase)
-  function loadDB() {
-    return db || {
-      products: [],
-      clients: [],
-      vendedores: [],
-      sales: [],
-      stockMoves: [],
-      contas: [],
-      movimentacoes: [],
-      categorias: []
-    };
-  }
-
-  // Variáveis globais
   let db = loadDB();
-  let settings = loadSettings();
-  let codeCounter = 0;
-
-  // Renderizar tudo
-  function renderAll() {
-    try {
-      renderHome();
-      renderProducts();
-      renderClients();
-      renderVendedores();
-      renderStock();
-      renderReportDefaults();
-      if(document.getElementById("lastCodeGenerated")){
-        document.getElementById("lastCodeGenerated").textContent = getLastGeneratedCode();
-      }
-      if(document.getElementById("blockSecondSwap")){
-        document.getElementById("blockSecondSwap").checked = settings.blockSecondSwap;
-      }
-    } catch (error) {
-      console.error('❌ Erro ao renderizar:', error);
-    }
-  }
-
-let db = loadDB();
   let settings = loadSettings();
 
   let selectedProductId = null;
@@ -2274,9 +2245,18 @@ let db = loadDB();
   }
 
   /* =========================
-     SAVE DB (Firebase)
+     SAVE DB
   ========================= */
-  // saveDB já está definido acima com Firebase
+  async function saveDB(reason){
+    console.log(`💾 Salvando: ${reason}`);
+    localStorage.setItem(KEY, JSON.stringify(db));
+    await saveToFirestore('main', { db: db });
+    
+    const counter = loadCodeCounter();
+    await saveToFirestore('counter', { counter: counter });
+    
+    scheduleBackup(reason);
+  }
 
   /* =========================
      TABS
@@ -5332,24 +5312,11 @@ let db = loadDB();
     }
   });
 
-  document.getElementById("btnWipe").addEventListener("click", async ()=>{
+  document.getElementById("btnWipe").addEventListener("click", ()=>{
     if(!confirm("ATENÇÃO: Isso vai apagar TUDO. Tem certeza?")) return;
-    
-    // Limpar dados locais
-    db = {
-      products: [],
-      clients: [],
-      vendedores: [],
-      sales: [],
-      stockMoves: [],
-      contas: [],
-      movimentacoes: [],
-      categorias: []
-    };
-    
-    // Salvar banco vazio no Firestore
-    await saveDB("Wipe");
-    
+    localStorage.removeItem(KEY);
+    db = loadDB();
+    saveDB("Wipe");
     currentSale = { items:[], finalizedSaleId:null };
     selectedProductId=null;
     selectedClientId=null;
