@@ -58,9 +58,8 @@ Auditoria completa (pontos fortes, todos os achados com evidência, diagrama ant
 - Publicação atual: `https://vaidosafashion.github.io/sistema-vaidosa/`.
 - Pasta de referência/documentos do usuário (iCloud, **não usar para código/git** — iCloud sync corrompe `.git`): `~/Library/Mobile Documents/com~apple~CloudDocs/Arquivo do Cartão de memoria/Sistema | Vaidosa/`. Tem uma cópia deste `CLAUDE.md` e uma cópia local antiga do sistema (desatualizada em relação ao GitHub — não usar como fonte).
 - Gerador de etiqueta (`ETIQUETAS.HTML`) e material relacionado: Google Drive do usuário, pasta "Projetos". Arquivos: `ETIQUETAS.HTML` (a versão em uso), `Sistema atual de etiquetas` (Google Doc com histórico de prompts/versão V9), `Etiqueta Vaidosa Base FINAL.lbl.nlbl` (template de outro formato, não-HTML, provavelmente obsoleto — confirmar com usuário antes de descartar).
-- Supabase: projeto `vaidosa-sistema`, ref a confirmar via `list_projects` na conta certa (a sessão que fez a auditoria só tinha acesso a outra conta Supabase, sem visibilidade desse projeto — pode ser necessário pedir acesso/token do usuário).
+- Supabase: projeto `vaidosa-sistema`, ref `ysultkzfhgtyujbomfqz`, org `tbwshziystprxrwrebqk` (região `sa-east-1`). CLI já logado e linkado localmente neste repo (`supabase link` feito em 2026-08-03). Acesso confirmado via `supabase projects list`.
 
 ## Pendências antes de codar o passo 1
 
-- Confirmar acesso real ao projeto Supabase `vaidosa-sistema` (conta certa/token) — a auditoria só confirmou que ele existe via screenshot do usuário, nenhuma ferramenta MCP desta sessão tinha acesso a ele.
-- Desenhar o schema Postgres (tabelas: products, clients, vendedores, sales, sale_items, stock_moves, contas, categorias, users) e política de RLS antes de migrar dado real de venda/estoque.
+- Desenhar o schema Postgres (tabelas: products, clients, vendedores, sales, sale_items, stock_moves, contas, categorias, users) e política de RLS antes de migrar dado real de venda/estoque. Ainda não desenhado — próximo passo.
