@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gerador de Etiquetas - Vaidosa</title>
+    <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
+    <style>
+        :root {
+            --w-etiqueta: 32mm; /* 33mm nominal, 32mm para margem de segurança */
+            --h-etiqueta: 50mm;
+            --gap: 2mm; /* Espaço entre colunas */
+        }
+
+        body { 
+            background: #f3f4f6; 
+            font-family: sans-serif; 
+            margin: 0; padding: 0; 
+            display: flex; height: 100vh;
+        }
+
+        /* --- MENU LATERAL (Tela) --- */
+        .sidebar {
+            width: 300px; background: white; padding: 20px; 
+            border-right: 1px solid #ddd; overflow-y: auto;
+            box-shadow: 2px 0 10px rgba(0,0,0,0.1);
+            display: flex; flex-direction: column; gap: 15px;
+            z-index: 10;
+        }
+        
+        h2 { margin: 0 0 10px 0; color: #b8276c; font-size: 1.2rem; }
+        
+        input, button { 
+            padding: 10px; width: 100%; box-sizing: border-box; 
+            border: 1px solid #ccc; border-radius: 6px; 
+        }
+        input:focus { border-color: #b8276c; outline: none; }
+        
+        button { cursor: pointer; font-weight: bold; background: #e5e7eb; color: #333; margin-top: 5px; }
+        button.primary { background: #b8276c; color: white; border: none; }
+        button.danger { background: #ef4444; color: white; border: none; }
+        
+        .item-lista {
+            background: #f9fafb; border: 1px solid #eee; 
+            padding: 10px; border-radius: 6px; font-size: 0.9rem;
+            cursor: pointer; transition: 0.2s;
+        }
+        .item-lista:hover { border-color: #b8276c; background: #fdf2f8; }
+        
+        /* --- ÁREA DE IMPRESSÃO --- */
+        .preview-area {
+            flex-grow: 1; padding: 20px; overflow: auto;
+            display: flex; justify-content: center;
+        }
+
+        /* A folha simulando o rolo de 3 colunas */
+        #folha-impressao {
+            background: white;
+            width: 104mm; /* Largura total aproximada de 3 colunas + gaps */
+            min-height: 200mm;
+            padding: 0 1mm; /* Margem de segurança lateral */
+            box-shadow: 0 0 20px rgba(0,0,0,0.2);
+            
+            display: grid;
+            grid-template-columns: repeat(3, 1fr); /* 3 Colunas */
+            grid-auto-rows: var(--h-etiqueta);
+            gap: 0; /* O gap é fisico no papel */
+            align-content: start;
+        }
+
+        /* --- O DESIGN DA ETIQUETA (Igual à Foto) --- */
+        .etiqueta {
+            width: var(--w-etiqueta);
+            height: var(--h-etiqueta);
+            box-sizing: border-box;
+            background: white;
+            display: flex; flex-direction: column; 
+            align-items: center; text-align: center;
+            padding: 2mm 1mm;
+            position: relative;
+            
+            /* Borda pontilhada só para visualização na tela */
+            border: 1px dashed #ddd; 
+        }
+
+        /* Topo: Logo Vaidosa Fashion */
+        .eti-topo {
+            border: 1px solid #000;
+            width: 90%;
+            padding: 2px 0;
+            margin-bottom: 3px;
+        }
+        .eti-topo-txt {
+            font-family: Arial, sans-serif;
+            font-weight: 900;
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            line-height: 1;
+            color: #fff;
+            -webkit-text-stroke: 0.5px black; /* Efeito vazado */
+        }
+        .eti-plus { font-size: 6px; letter-spacing: 2px; color: #000; margin-top: 1px; font-weight: bold; }
+
+        /* Tarja Preta Vaidosa */
+        .eti-tarja {
+            background: #000; color: #fff;
+            font-weight: bold; font-size: 9px;
+            padding: 1px 6px;
+            margin-bottom: 2px;
+        }
+
+        /* Código de Barras */
+        .eti-barcode { width: 90%; height: 28px; margin: 2px 0 0 0; }
+        .eti-code-num { font-size: 9px; letter-spacing: 1px; margin-bottom: 2px; font-family: monospace; }
+
+        /* Descrição e Ref */
+        .eti-nome { 
+            font-size: 9px; font-weight: bold; text-transform: uppercase; 
+            max-width: 100%; white-space: nowrap; overflow: hidden;
+        }
+        .eti-ref { font-size: 8px; font-weight: bold; margin-bottom: 2px; }
+
+        /* Tamanho Gigante */
+        .eti-tam { font-size: 24px; font-weight: 900; line-height: 1; margin-top: auto; }
+
+        /* Marcas de corte (cantos) igual a foto */
+        .crop-bl { position: absolute; bottom: 2px; left: 2px; width: 4px; height: 4px; border-bottom: 1px solid #000; border-left: 1px solid #000; }
+        .crop-br { position: absolute; bottom: 2px; right: 2px; width: 4px; height: 4px; border-bottom: 1px solid #000; border-right: 1px solid #000; }
+
+        /* --- MODO DE IMPRESSÃO --- */
+        @media print {
+            .sidebar { display: none; }
+            .preview-area { padding: 0; overflow: visible; }
+            body { background: white; }
+            #folha-impressao {
+                box-shadow: none;
+                width: 100%; /* Ocupa o papel definido no driver */
+                margin: 0; padding: 0;
+            }
+            .etiqueta {
+                border: none; /* Remove pontilhado */
+                page-break-inside: avoid;
+            }
+        }
+    </style>
+</head>
+<body>
+
+<div class="sidebar">
+    <h2>🖨️ Etiquetas Zebra</h2>
+    
+    <div>
+        <label>Buscar Produto:</label>
+        <input type="text" id="search" placeholder="Nome ou código..." onkeyup="renderSearch()">
+    </div>
+    
+    <div id="result-list" style="max-height: 150px; overflow-y: auto; border: 1px solid #eee; border-radius: 6px;">
+        </div>
+
+    <div style="border-top: 1px solid #eee; padding-top: 10px;">
+        <label>Produto Selecionado:</label>
+        <div id="sel-nome" style="font-weight:bold; color:#b8276c">Nenhum</div>
+        <div style="display:flex; gap:5px; margin-top:5px">
+            <input type="text" id="sel-tam" placeholder="TAM" style="width: 30%" readonly>
+            <input type="number" id="qtd" value="1" min="1" style="width: 30%">
+            <button class="primary" style="width: 40%; margin:0" onclick="addFila()">Adicionar</button>
+        </div>
+    </div>
+
+    <div style="margin-top:auto">
+        <button class="primary" style="padding: 15px; font-size: 1.1rem" onclick="window.print()">IMPRIMIR (Ctrl+P)</button>
+        <button class="danger" onclick="limpar()">Limpar Tudo</button>
+    </div>
+</div>
+
+<div class="preview-area">
+    <div id="folha-impressao">
+        </div>
+</div>
+
+<script>
+    // 1. CARREGAR DADOS DO SISTEMA PRINCIPAL
+    let DB = { products: [] };
+    let produtoSelecionado = null;
+
+    try {
+        const raw = localStorage.getItem("vaidosa_lite_v4");
+        if(raw) DB = JSON.parse(raw);
+    } catch(e) { console.error("Erro ao ler banco", e); }
+
+    // 2. FUNÇÕES DE BUSCA
+    function renderSearch() {
+        const term = document.getElementById("search").value.toLowerCase();
+        const list = document.getElementById("result-list");
+        list.innerHTML = "";
+
+        if(term.length < 1) return;
+
+        // Filtra e limita a 20 resultados
+        const matches = DB.products.filter(p => 
+            (p.name && p.name.toLowerCase().includes(term)) || 
+            (p.barcode && String(p.barcode).includes(term))
+        ).slice(0, 20);
+
+        matches.forEach(p => {
+            const div = document.createElement("div");
+            div.className = "item-lista";
+            // Mostra Nome + Grade + Estoque
+            div.innerHTML = `<b>${p.name}</b> <span style="float:right; color:#b8276c">${p.size}</span><br><small>Ref: ${p.barcode} | Est: ${p.stock}</small>`;
+            div.onclick = () => selecionar(p);
+            list.appendChild(div);
+        });
+    }
+
+    function selecionar(p) {
+        produtoSelecionado = p;
+        document.getElementById("sel-nome").innerText = p.name;
+        document.getElementById("sel-tam").value = p.size;
+        document.getElementById("result-list").innerHTML = ""; // Limpa busca
+        document.getElementById("search").value = "";
+        document.getElementById("qtd").focus();
+    }
+
+    // 3. ADICIONAR NA FILA DE IMPRESSÃO
+    function addFila() {
+        if(!produtoSelecionado) return alert("Selecione um produto primeiro!");
+        
+        const qtd = parseInt(document.getElementById("qtd").value);
+        const area = document.getElementById("folha-impressao");
+
+        for(let i=0; i<qtd; i++) {
+            const div = document.createElement("div");
+            div.className = "etiqueta";
+            
+            // Monta o HTML da etiqueta baseado na foto
+            div.innerHTML = `
+                <div class="eti-topo">
+                    <div class="eti-topo-txt">VAIDOSA</div>
+                    <div class="eti-topo-txt">FASHION</div>
+                </div>
+                <div class="eti-plus">PLUS SIZE</div>
+                
+                <div class="eti-tarja">VAIDOSA</div>
+                
+                <svg class="eti-barcode"></svg>
+                
+                <div class="eti-nome">${produtoSelecionado.name.substring(0, 18)}</div>
+                <div class="eti-ref">REF: ${produtoSelecionado.sku || '000'}</div>
+                
+                <div class="eti-tam">${produtoSelecionado.size}</div>
+                
+                <div class="crop-bl"></div>
+                <div class="crop-br"></div>
+            `;
+            
+            area.appendChild(div);
+
+            // Gera o código de barras no elemento SVG recém criado
+            // Usamos CODE128 que é compacto e aceita letras/numeros
+            JsBarcode(div.querySelector(".eti-barcode"), produtoSelecionado.barcode, {
+                format: "CODE128",
+                lineColor: "#000",
+                width: 1.5, // Largura da barra (ajustar se ficar largo demais)
+                height: 25,
+                displayValue: true, // Mostra o número embaixo das barras
+                fontSize: 10,
+                margin: 0
+            });
+        }
+    }
+
+    function limpar() {
+        document.getElementById("folha-impressao").innerHTML = "";
+    }
+</script>
+
+</body>
+</html>
