@@ -240,6 +240,53 @@
     .small{font-size:12px}
     .hide{display:none !important}
     .sep{height:1px;background:var(--line);margin:14px 0}
+
+    /* Tela de login (nome + PIN) */
+    .login-gate{
+      position:fixed;inset:0;z-index:1000;
+      background:var(--bg);
+      display:flex;align-items:center;justify-content:center;
+      padding:20px;
+    }
+    .login-card{
+      width:100%;max-width:360px;
+      background:var(--card);
+      border:1px solid var(--line);
+      border-radius:16px;
+      box-shadow:var(--shadow-lg);
+      padding:32px 28px;
+      text-align:center;
+    }
+    .login-card h1{
+      font-size:20px;font-weight:600;color:var(--txt);margin-bottom:6px;letter-spacing:-0.02em;
+    }
+    .login-card .sub{color:var(--muted);font-size:13px;margin-bottom:24px}
+    .login-names{display:flex;flex-direction:column;gap:10px}
+    .login-name-btn{
+      width:100%;padding:14px;border-radius:10px;
+      border:1.5px solid var(--line);background:#fff;
+      font-size:15px;font-weight:600;color:var(--txt);
+      cursor:pointer;transition:.15s ease;
+    }
+    .login-name-btn:hover{border-color:var(--accent);color:var(--accent);background:#fdf2f8}
+    .login-selected{font-size:15px;font-weight:600;color:var(--accent);margin-bottom:16px}
+    #login_pin{
+      width:100%;padding:14px;font-size:22px;text-align:center;letter-spacing:8px;
+      border:1.5px solid var(--line);border-radius:10px;margin-bottom:14px;
+    }
+    #login_pin:focus{border-color:var(--accent);outline:none}
+    .login-error{
+      color:var(--bad);font-size:13px;margin-top:14px;font-weight:600;
+    }
+    .login-user-badge{
+      display:flex;align-items:center;justify-content:space-between;
+      padding:10px 20px;border-top:1px solid var(--line);margin-top:8px;
+      font-size:12.5px;color:var(--muted);
+    }
+    .login-user-badge button{
+      background:none;border:none;color:var(--accent);font-size:12.5px;
+      font-weight:600;cursor:pointer;padding:0;
+    }
     .toast{
       position:fixed;right:20px;bottom:20px;
       background:#fff;
@@ -328,7 +375,26 @@
   </style>
 </head>
 <body>
-<aside class="sidebar">
+
+<div id="loginGate" class="login-gate">
+  <div class="login-card">
+    <h1>Vaidosa Gestão</h1>
+    <div class="sub" id="loginSub">Quem é você?</div>
+
+    <div id="loginStepNames" class="login-names"></div>
+
+    <div id="loginStepPin" class="hide">
+      <div class="login-selected" id="loginSelectedName"></div>
+      <input id="login_pin" type="password" inputmode="numeric" maxlength="4" placeholder="• • • •" autocomplete="off" />
+      <button class="btn primary" id="btnLoginSubmit" style="width:100%;padding:14px;font-size:15px">Entrar</button>
+      <button class="btn" id="btnLoginBack" style="width:100%;margin-top:8px">Voltar</button>
+    </div>
+
+    <div id="loginError" class="login-error hide"></div>
+  </div>
+</div>
+
+<aside class="sidebar hide" id="appSidebar">
   <div class="sidebar-header">
     <h1>Vaidosa Gestão <span class="badgeAccent">Premium</span></h1>
     <div class="sub">Sistema completo de gestão para moda plus size</div>
@@ -367,9 +433,13 @@
       Backup & Dados
     </button>
   </nav>
+  <div class="login-user-badge">
+    <span id="currentUserBadge"></span>
+    <button id="btnLogout">Sair</button>
+  </div>
 </aside>
 
-<div class="main-container">
+<div class="main-container hide" id="appMain">
 <main class="wrap">
   <section id="tab-home" class="grid hide">
     <div class="card">
@@ -1632,8 +1702,113 @@
 
 <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 
 <script>
+  /* =========================
+     LOGIN (nome + PIN sobre Supabase Auth)
+  ========================= */
+  const SUPABASE_URL = "https://ysultkzfhgtyujbomfqz.supabase.co";
+  const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlzdWx0a3pmaGd0eXVqYm9tZnF6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjgyMDU5MDQsImV4cCI6MjA4Mzc4MTkwNH0.K6hvg27ceUetyiW5qjzIX-VDiWrYUwHDhHdhpUQ9L-c";
+  const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+  let currentProfile = null; // { id, display_name, is_admin, is_vendedora, vendedor_id }
+  let selectedLoginProfile = null;
+
+  async function renderLoginNames(){
+    const box = document.getElementById("loginStepNames");
+    box.innerHTML = "<div class='muted small'>Carregando...</div>";
+    const { data, error } = await sb.from("profiles").select("id,display_name,login_email,is_admin,is_vendedora,vendedor_id").eq("active", true).order("display_name");
+    if(error || !data || !data.length){
+      box.innerHTML = "<div class='login-error'>Não consegui carregar os usuários. Confira sua internet e recarregue a página.</div>";
+      return;
+    }
+    box.innerHTML = "";
+    data.forEach(p=>{
+      const btn = document.createElement("button");
+      btn.className = "login-name-btn";
+      btn.textContent = p.display_name;
+      btn.onclick = ()=>{
+        selectedLoginProfile = p;
+        document.getElementById("loginSelectedName").textContent = p.display_name;
+        document.getElementById("loginStepNames").classList.add("hide");
+        document.getElementById("loginStepPin").classList.remove("hide");
+        document.getElementById("loginSub").textContent = "Digite seu PIN";
+        document.getElementById("loginError").classList.add("hide");
+        const pinInput = document.getElementById("login_pin");
+        pinInput.value = "";
+        pinInput.focus();
+      };
+      box.appendChild(btn);
+    });
+  }
+
+  function showLoginError(msg){
+    const el = document.getElementById("loginError");
+    el.textContent = msg;
+    el.classList.remove("hide");
+  }
+
+  async function doLogin(){
+    if(!selectedLoginProfile) return;
+    const pin = document.getElementById("login_pin").value.trim();
+    if(pin.length < 4) return showLoginError("Digite os 4 dígitos do PIN.");
+    const { data, error } = await sb.auth.signInWithPassword({
+      email: selectedLoginProfile.login_email,
+      password: pin
+    });
+    if(error){
+      showLoginError("PIN incorreto. Tente de novo.");
+      document.getElementById("login_pin").value = "";
+      document.getElementById("login_pin").focus();
+      return;
+    }
+    currentProfile = selectedLoginProfile;
+    enterApp();
+  }
+
+  document.getElementById("btnLoginSubmit").addEventListener("click", doLogin);
+  document.getElementById("login_pin").addEventListener("keydown", (e)=>{ if(e.key === "Enter") doLogin(); });
+  document.getElementById("btnLoginBack").addEventListener("click", ()=>{
+    selectedLoginProfile = null;
+    document.getElementById("loginStepPin").classList.add("hide");
+    document.getElementById("loginStepNames").classList.remove("hide");
+    document.getElementById("loginSub").textContent = "Quem é você?";
+    document.getElementById("loginError").classList.add("hide");
+  });
+
+  function enterApp(){
+    document.getElementById("loginGate").classList.add("hide");
+    document.getElementById("appSidebar").classList.remove("hide");
+    document.getElementById("appMain").classList.remove("hide");
+    const badge = document.getElementById("currentUserBadge");
+    if(currentProfile) badge.textContent = currentProfile.display_name + (currentProfile.is_admin ? " (ADM)" : "");
+    initApp();
+  }
+
+  document.getElementById("btnLogout").addEventListener("click", async ()=>{
+    await sb.auth.signOut();
+    location.reload();
+  });
+
+  async function checkExistingSession(){
+    const { data } = await sb.auth.getSession();
+    if(!data?.session){
+      renderLoginNames();
+      return;
+    }
+    const { data: profile, error } = await sb.from("profiles").select("id,display_name,login_email,is_admin,is_vendedora,vendedor_id").eq("id", data.session.user.id).single();
+    if(error || !profile){
+      await sb.auth.signOut();
+      renderLoginNames();
+      return;
+    }
+    currentProfile = profile;
+    enterApp();
+  }
+
+  checkExistingSession();
+
   /* =========================
      BANCO LOCAL
   ========================= */
@@ -5074,21 +5249,23 @@
   });
 
   /* =========================
-     INIT
+     INIT (chamado só depois do login, ver enterApp())
   ========================= */
-  setTab("venda");
-  renderHome();
-  renderProducts();
-  renderClients();
-  renderVendedores();
-  renderStock();
-  renderReportDefaults();
+  function initApp(){
+    setTab("venda");
+    renderHome();
+    renderProducts();
+    renderClients();
+    renderVendedores();
+    renderStock();
+    renderReportDefaults();
 
-  if(document.getElementById("lastCodeGenerated")){
-    document.getElementById("lastCodeGenerated").textContent = getLastGeneratedCode();
+    if(document.getElementById("lastCodeGenerated")){
+      document.getElementById("lastCodeGenerated").textContent = getLastGeneratedCode();
+    }
+
+    (async ()=>{ try{ await initAutoBackup(); }catch{} })();
   }
-
-  (async ()=>{ try{ await initAutoBackup(); }catch{} })();
 </script>
 
 </body>
