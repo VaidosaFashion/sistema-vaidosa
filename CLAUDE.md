@@ -4,7 +4,12 @@ Leia este arquivo inteiro antes de mexer em qualquer coisa. Ele existe para que 
 
 ## Negócio
 
-Loja de roupa feminina plus size ("Vaidosa Fashion Plus"). Uso interno por **3 pessoas**: o dono (Kennedy), Cristiane e a cunhada dele — cada uma normalmente num aparelho diferente. Vendas hoje são presenciais (loja) e por WhatsApp/Instagram/tráfego. Objetivo declarado: abrir canais de **marketplace (Mercado Livre, TikTok Shop)** em breve, o que exige estoque sincronizado de verdade.
+Loja de roupa feminina plus size ("Vaidosa Fashion Plus"). Uso interno por **3 pessoas**, cada uma normalmente num aparelho diferente:
+- **Kennedy** — ADM
+- **Cristiane** — ADM e vendas
+- **Tatiane** (cunhada do Kennedy) — vendas
+
+Vendas hoje são presenciais (loja) e por WhatsApp/Instagram/tráfego. Objetivo declarado: abrir canais de **marketplace (Mercado Livre, TikTok Shop)** em breve, o que exige estoque sincronizado de verdade.
 
 O dono não escreve código — todo o sistema até aqui foi construído descrevendo o que precisava para IAs generativas. Funciona, mas isso já causou bugs reais e uma segunda "gambiarra" separada (ver abaixo).
 
@@ -14,10 +19,12 @@ O dono não escreve código — todo o sistema até aqui foi construído descrev
 
 1. **Sistema principal** — `index.html`, publicado em `https://vaidosafashion.github.io/sistema-vaidosa/` (repo `VaidosaFashion/sistema-vaidosa`, branch `main`, única página). 100% client-side: lê/grava tudo em `localStorage` (chave `vaidosa_lite_v4`, ver `loadDB()`/`saveDB()`) e `IndexedDB` (auto-backup de arquivo via File System Access API). Módulos/abas: Home, Venda (PDV com leitor de código de barras), Produtos (grade de tamanho G1–G5), Estoque, Clientes, Vendedores, Financeiro (contas a pagar/receber + fluxo de caixa, usa Chart.js), Relatórios, Backup. Gera PDF de recibo (jsPDF) e abre link `wa.me` pra WhatsApp. O rodapé do PDF já diz "Este documento não é nota fiscal" — não há nenhuma emissão fiscal hoje.
 
-2. **Gerador de etiqueta Zebra** — arquivo separado `ETIQUETAS.HTML` (não está no GitHub, só numa cópia no Google Drive do usuário e num arquivo local). Lê o estoque direto de `localStorage.getItem("vaidosa_lite_v4")` — **a mesma chave do sistema principal**. Isso só funciona porque os dois arquivos são abertos localmente (`file://`) no mesmo navegador, que por implementação (não por design) compartilha esse `localStorage` entre arquivos locais. Frágil: outro navegador, outra máquina, ou uma mudança de comportamento do Chrome quebra sem aviso. O design da etiqueta em si (CODE128 via JsBarcode, dimensão de rolo 32×50mm, impressão via `window.print()` com CSS `@media print`) está bom e deve ser reaproveitado — só a forma de pegar o dado do produto é que precisa mudar.
+2. **Gerador de etiqueta Zebra** — arquivo separado `ETIQUETAS.HTML` (cópia salva em `docs/etiquetas-legado/` neste repo, veio do Google Drive do usuário). Lê o estoque direto de `localStorage.getItem("vaidosa_lite_v4")` — **a mesma chave do sistema principal**. Isso só funciona porque os dois arquivos são abertos localmente (`file://`) no mesmo navegador, que por implementação (não por design) compartilha esse `localStorage` entre arquivos locais. Frágil: outro navegador, outra máquina, ou uma mudança de comportamento do Chrome quebra sem aviso. O design da etiqueta em si (CODE128 via JsBarcode, dimensão de rolo 32×50mm, impressão via `window.print()` com CSS `@media print`) está bom e deve ser reaproveitado — só a forma de pegar o dado do produto é que precisa mudar.
 
-**Infra já provisionada, ainda não usada:**
-- Projeto Supabase `vaidosa-sistema` (org "VaidosaFashion's Org", plano Free, região `sa-east-1`, hoje pausado por inatividade, sem tabelas). Esse é o banco central que vai substituir o `localStorage`.
+   **Correção importante:** o texto na tela de Produtos diz "Todas as grades compartilham o mesmo código de barras" — isso é **falso**, não é o que o código faz. Em `btnAddProduct` (index.html:2167-2188), cada tamanho (G1–G5) chama `generateNextCode()` individualmente e recebe um barcode **único e distinto por tamanho**, não compartilhado. Além disso esse contador (`vaidosa_code_counter`) é por dispositivo — os 3 aparelhos gerando produtos separadamente podiam gerar o mesmo código `VF000042` apontando pra produtos diferentes (colisão real, silenciosa até os dados serem unificados num banco só).
+
+**Infra:**
+- Projeto Supabase `vaidosa-sistema` (org "VaidosaFashion's Org", plano Free, região `sa-east-1`, ref `ysultkzfhgtyujbomfqz`). **Schema já aplicado em 2026-08-03** — ver "Step 1 — status" abaixo.
 - GitHub: conta `VaidosaFashion` tem push access configurado nesta máquina (`gh auth login` já trocado de `Voecomkennedy` pra `VaidosaFashion`).
 
 ## Bugs confirmados (auditados em 2026-08-03, linhas do `index.html` publicado nesse momento)
@@ -60,6 +67,19 @@ Auditoria completa (pontos fortes, todos os achados com evidência, diagrama ant
 - Gerador de etiqueta (`ETIQUETAS.HTML`) e material relacionado: Google Drive do usuário, pasta "Projetos". Arquivos: `ETIQUETAS.HTML` (a versão em uso), `Sistema atual de etiquetas` (Google Doc com histórico de prompts/versão V9), `Etiqueta Vaidosa Base FINAL.lbl.nlbl` (template de outro formato, não-HTML, provavelmente obsoleto — confirmar com usuário antes de descartar).
 - Supabase: projeto `vaidosa-sistema`, ref `ysultkzfhgtyujbomfqz`, org `tbwshziystprxrwrebqk` (região `sa-east-1`). CLI já logado e linkado localmente neste repo (`supabase link` feito em 2026-08-03). Acesso confirmado via `supabase projects list`.
 
-## Pendências antes de codar o passo 1
+## Step 1 — status (2026-08-03)
 
-- Desenhar o schema Postgres (tabelas: products, clients, vendedores, sales, sale_items, stock_moves, contas, categorias, users) e política de RLS antes de migrar dado real de venda/estoque. Ainda não desenhado — próximo passo.
+**Schema aplicado e testado.** Migrações em `supabase/migrations/`:
+- `20260803214619_core_schema.sql` — tabelas: `profiles` (login+papel: `is_admin`/`is_vendedora`/`vendedor_id`), `vendedores`, `clients`, `categorias`, `products` (barcode com sequência **do servidor**, corrige a colisão por dispositivo), `sales`, `sale_items`, `sale_payments`, `stock_moves`, `contas`, `movimentacoes` (registro de cada pagamento/recebimento contra uma conta — existia em `db.movimentacoes`, não estava documentado antes aqui), `store_settings` (singleton, substitui o `blockSecondSwap` por-aparelho), view `v_contas`.
+- `20260803214620_rls_policies.sql` — RLS habilitada em todas as tabelas de negócio, policy única `authenticated full access` (modelo de confiança compartilhado, não multi-tenant — as 3 pessoas veem/editam os mesmos dados). `profiles` é a exceção: legível por `anon` (só pra listar nomes na tela de login), sem policy de escrita pelo app.
+- `20260803214621_rpc_functions.sql` — `create_sale`/`create_conta`, idempotentes via `client_request_id` (retry com a mesma chave retorna o registro já criado, não duplica) + `for update` na linha do produto em `create_sale` (fecha a corrida entre dois aparelhos vendendo o último item ao mesmo tempo). Trigger `recalc_sale_totals` mantém `fee_value`/`net_received`/`profit`/`payment_status` sincronizados quando `sale_payments` muda, reproduzindo a fórmula exata de `btnAddPayment` (index.html:4397-4459) e `getSalePaymentStatus` (index.html:4258-4264).
+
+**Verificado por teste real (depois limpo, banco vazio de novo):** duas chamadas de `create_sale` com o mesmo `client_request_id` retornam a mesma venda sem duplicar; venda com quantidade maior que o estoque é rejeitada; duas chamadas **simultâneas** (via curl em paralelo) para o último item em estoque — só uma teve sucesso, a outra recebeu "Estoque insuficiente", estoque final ficou em 0 (não negativo); `create_conta` idempotente confirmado da mesma forma.
+
+**Nota técnica importante — `supabase db push`/`supabase migration list` não funcionam neste projeto.** O CLI tenta provisionar uma "login role" própria (`cli_login_postgres`) e falha com `permission denied to alter role` — não é erro de SQL nosso, é uma limitação de permissão no projeto/token atual (não investigado a fundo, pode ser algo a resolver com o suporte do Supabase depois). **Workaround usado e que funciona:** aplicar SQL diretamente via Management API (`POST https://api.supabase.com/v1/projects/ysultkzfhgtyujbomfqz/database/query`, header `Authorization: Bearer <personal access token>`, body `{"query": "<sql>"}`), autenticado com um Personal Access Token (prefixo `sbp_`, gerado em Account → Access Tokens). A tabela de histórico de migração do CLI (`supabase_migrations.schema_migrations`) foi criada e populada manualmente pra manter o controle de versão consistente, caso o `db push` volte a funcionar no futuro.
+
+**Ainda faltando pra fechar o Step 1:**
+- Trocar cada `db.x.push(...); saveDB(...)` no `index.html` por chamada real ao Supabase (via `supabase-js` por CDN, sem build step) — módulo por módulo: Produtos → Estoque → Vendas → Clientes → Vendedores → Financeiro.
+- Login "nome + PIN" (Step 3, mas o desenho já está decidido: PIN de 4 dígitos como senha de contas reais no Supabase Auth com email sintético, protegido por Cloudflare Turnstile invisível — ver plano completo salvo em `~/.claude/plans/noble-doodling-hellman.md` na máquina do Kennedy).
+- Migração dos dados históricos dos 3 aparelhos (exportar backup de cada um, unir vendas/estoque por id, mas reconciliar clientes/produtos/categorias manualmente — provável colisão de barcode entre aparelhos, ver acima).
+- Corte único agendado pra produção (não gradual — ver plano).
