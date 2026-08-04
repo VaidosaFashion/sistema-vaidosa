@@ -2012,6 +2012,33 @@
     db.sales = data.map(mapSaleFromDb);
   }
 
+  /* =========================
+     CLIENTES — Supabase
+  ========================= */
+  async function loadClientsFromSupabase(){
+    const { data, error } = await sb.from("clients").select("*").order("created_at", { ascending:false });
+    if(error){
+      toast("Erro ao carregar clientes", error.message);
+      return;
+    }
+    db.clients = data.map(c=>({
+      id: c.id, name: c.name, phone: c.phone, cnpj: c.cnpj, cpf: c.cpf,
+      city: c.city, note: c.note, trocaCount: c.troca_count
+    }));
+  }
+
+  /* =========================
+     VENDEDORES — Supabase
+  ========================= */
+  async function loadVendedoresFromSupabase(){
+    const { data, error } = await sb.from("vendedores").select("*").order("created_at", { ascending:false });
+    if(error){
+      toast("Erro ao carregar vendedores", error.message);
+      return;
+    }
+    db.vendedores = data;
+  }
+
   let selectedProductId = null;
   let selectedClientId = null;
   let editingClientId = null; // Controle de edição
@@ -2670,25 +2697,33 @@
   /* =========================
      CLIENTES
   ========================= */
-  document.getElementById("btnAddClient").addEventListener("click", ()=>{
+  document.getElementById("btnAddClient").addEventListener("click", async ()=>{
     const name = document.getElementById("c_name").value.trim();
     if(!name) return toast("Faltou nome","Preencha o cliente.");
     const phone = document.getElementById("c_phone").value.trim();
 
+    const btn = document.getElementById("btnAddClient");
+    btn.disabled = true;
+
     // Se está editando
     if(editingClientId){
       const c = db.clients.find(x=>x.id===editingClientId);
-      if(!c) return toast("Erro","Cliente não encontrado.");
-      
-      c.name = name;
-      c.phone = phone;
-      c.cnpj = document.getElementById("c_cnpj").value.trim();
-      c.cpf = document.getElementById("c_cpf").value.trim();
-      c.city = document.getElementById("c_city").value.trim();
-      c.note = document.getElementById("c_note").value.trim();
-      c.trocaCount = Math.max(0, Math.floor(toNum(document.getElementById("c_trocas").value)));
-      
-      saveDB("Cliente atualizado");
+      if(!c){ btn.disabled = false; return toast("Erro","Cliente não encontrado."); }
+
+      const patch = {
+        name, phone,
+        cnpj: document.getElementById("c_cnpj").value.trim(),
+        cpf: document.getElementById("c_cpf").value.trim(),
+        city: document.getElementById("c_city").value.trim(),
+        note: document.getElementById("c_note").value.trim(),
+        troca_count: Math.max(0, Math.floor(toNum(document.getElementById("c_trocas").value)))
+      };
+
+      const { data, error } = await sb.from("clients").update(patch).eq("id", c.id).select().single();
+      btn.disabled = false;
+      if(error) return toast("Falhou", error.message);
+
+      Object.assign(c, { ...data, trocaCount: data.troca_count });
       toast("Cliente atualizado","Dados salvos com sucesso.");
       editingClientId = null;
       document.getElementById("btnAddClient").textContent = "Salvar cliente";
@@ -2700,19 +2735,20 @@
     }
 
     // Se está criando novo
-    const c = {
-      id: uid("c"),
-      name,
-      phone,
+    const row = {
+      name, phone,
       cnpj: document.getElementById("c_cnpj").value.trim(),
       cpf: document.getElementById("c_cpf").value.trim(),
       city: document.getElementById("c_city").value.trim(),
       note: document.getElementById("c_note").value.trim(),
-      trocaCount: Math.max(0, Math.floor(toNum(document.getElementById("c_trocas").value)))
+      troca_count: Math.max(0, Math.floor(toNum(document.getElementById("c_trocas").value)))
     };
 
-    db.clients.unshift(c);
-    saveDB("Cliente");
+    const { data, error } = await sb.from("clients").insert(row).select().single();
+    btn.disabled = false;
+    if(error) return toast("Falhou", error.message);
+
+    db.clients.unshift({ id: data.id, name: data.name, phone: data.phone, cnpj: data.cnpj, cpf: data.cpf, city: data.city, note: data.note, trocaCount: data.troca_count });
     toast("Cliente salvo","Cadastro concluído.");
     clearClientForm();
     renderClients();
@@ -3682,19 +3718,21 @@
   /* =========================
      VENDEDORES
   ========================= */
-  document.getElementById("btnAddVendedor").addEventListener("click", ()=>{
+  document.getElementById("btnAddVendedor").addEventListener("click", async ()=>{
     const name = document.getElementById("v_name").value.trim();
     if(!name) return toast("Faltou nome","Preencha o nome do vendedor.");
 
-    const v = {
-      id: uid("v"),
+    const btn = document.getElementById("btnAddVendedor");
+    btn.disabled = true;
+    const { data, error } = await sb.from("vendedores").insert({
       name,
       phone: document.getElementById("v_phone").value.trim(),
       note: document.getElementById("v_note").value.trim()
-    };
+    }).select().single();
+    btn.disabled = false;
+    if(error) return toast("Falhou", error.message);
 
-    db.vendedores.unshift(v);
-    saveDB("Vendedor");
+    db.vendedores.unshift(data);
     toast("Vendedor salvo","Cadastro concluído.");
     clearVendedorForm();
     renderVendedores();
@@ -3720,16 +3758,19 @@
     }).join("");
 
     tb.querySelectorAll("button[data-del]").forEach(b=>{
-      b.addEventListener("click", ()=>{
+      b.addEventListener("click", async ()=>{
         const vid = b.dataset.del;
         const v = db.vendedores.find(x=>x.id===vid);
         if(!v) return;
 
-        const used = db.sales.some(s=>s.vendedorId===vid);
-        if(used) return toast("Bloqueado","Vendedor já apareceu em vendas. Não excluo para manter histórico.");
+        const { data: usedRows, error: checkErr } = await sb.from("sales").select("id").eq("vendedor_id", vid).limit(1);
+        if(checkErr) return toast("Erro", checkErr.message);
+        if(usedRows && usedRows.length) return toast("Bloqueado","Vendedor já apareceu em vendas. Não excluo para manter histórico.");
+
+        const { error } = await sb.from("vendedores").delete().eq("id", vid);
+        if(error) return toast("Falhou", error.message);
 
         db.vendedores = db.vendedores.filter(x=>x.id!==vid);
-        saveDB("Vendedor excluído");
         toast("Excluído","Vendedor removido.");
         renderVendedores();
         renderSaleVendedorSelect();
@@ -5327,6 +5368,8 @@
   async function initApp(){
     await loadProductsFromSupabase();
     await loadStockMovesFromSupabase();
+    await loadClientsFromSupabase();
+    await loadVendedoresFromSupabase();
     setTab("venda");
     renderHome();
     renderProducts();
