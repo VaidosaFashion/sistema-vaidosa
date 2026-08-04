@@ -445,6 +445,7 @@
     <div id="loginStepPin" class="hide">
       <div class="login-selected" id="loginSelectedName"></div>
       <input id="login_pin" type="password" inputmode="numeric" maxlength="4" placeholder="• • • •" autocomplete="off" />
+      <div id="turnstileWidget" style="display:flex;justify-content:center;margin-bottom:10px"></div>
       <button class="btn primary" id="btnLoginSubmit" style="width:100%;padding:14px;font-size:15px">Entrar</button>
       <button class="btn" id="btnLoginBack" style="width:100%;margin-top:8px">Voltar</button>
     </div>
@@ -1819,6 +1820,7 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
+<script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
 
 <script>
   /* =========================
@@ -1830,6 +1832,23 @@
 
   let currentProfile = null; // { id, display_name, is_admin, is_vendedora, vendedor_id }
   let selectedLoginProfile = null;
+
+  // Turnstile: proteção contra tentativa de força-bruta no PIN (site público,
+  // 10.000 combinações possíveis). Site key é pública por design, como a anon key.
+  const TURNSTILE_SITE_KEY = "0x4AAAAAAEGMc36Pp9L-8lWC";
+  let turnstileWidgetId = null;
+  let turnstileToken = null;
+
+  function renderTurnstile(){
+    if(turnstileWidgetId !== null) return; // já renderizado, reaproveita
+    if(typeof turnstile === "undefined") return; // script ainda carregando, tenta de novo no próximo passo
+    turnstileWidgetId = turnstile.render("#turnstileWidget", {
+      sitekey: TURNSTILE_SITE_KEY,
+      callback: (token)=>{ turnstileToken = token; },
+      "expired-callback": ()=>{ turnstileToken = null; },
+      "error-callback": ()=>{ turnstileToken = null; }
+    });
+  }
 
   async function renderLoginNames(){
     const box = document.getElementById("loginStepNames");
@@ -1854,6 +1873,7 @@
         const pinInput = document.getElementById("login_pin");
         pinInput.value = "";
         pinInput.focus();
+        renderTurnstile();
       };
       box.appendChild(btn);
     });
@@ -1869,10 +1889,18 @@
     if(!selectedLoginProfile) return;
     const pin = document.getElementById("login_pin").value.trim();
     if(pin.length < 4) return showLoginError("Digite os 4 dígitos do PIN.");
+    if(!turnstileToken) return showLoginError("Aguarde um instante (verificação de segurança carregando) e tente de novo.");
+
     const { data, error } = await sb.auth.signInWithPassword({
       email: selectedLoginProfile.login_email,
-      password: pin
+      password: pin,
+      options: { captchaToken: turnstileToken }
     });
+
+    // Token do Turnstile só serve pra uma tentativa — pede um novo a cada clique.
+    if(turnstileWidgetId !== null) turnstile.reset(turnstileWidgetId);
+    turnstileToken = null;
+
     if(error){
       showLoginError("PIN incorreto. Tente de novo.");
       document.getElementById("login_pin").value = "";
