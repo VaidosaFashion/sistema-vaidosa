@@ -762,6 +762,55 @@
       </div>
 
       <div class="sep"></div>
+      <h2>Dados fiscais (NF-e)</h2>
+      <div class="warnBox small" style="margin-bottom:12px">
+        Preenche a classificação fiscal de uma vez, na hora do cadastro. NCM varia por tipo de peça — confira com o contador se tiver dúvida. Os outros já vêm com um valor comum pra loja de roupa MEI/Simples, mas confirme antes de emitir nota de verdade.
+      </div>
+
+      <div class="row cols2">
+        <div>
+          <label>NCM</label>
+          <input id="p_ncm" placeholder="Ex: 6104.42.00" />
+        </div>
+        <div>
+          <label>CFOP (padrão de venda)</label>
+          <input id="p_cfop" placeholder="Ex: 5102" value="5102" />
+        </div>
+      </div>
+
+      <div class="row cols3">
+        <div>
+          <label>Unidade</label>
+          <input id="p_unidade" value="UN" />
+        </div>
+        <div>
+          <label>Origem</label>
+          <select id="p_origem">
+            <option value="0" selected>0 - Nacional</option>
+            <option value="1">1 - Estrangeira (importação direta)</option>
+            <option value="2">2 - Estrangeira (mercado interno)</option>
+            <option value="3">3 - Nacional (+40% importado)</option>
+            <option value="4">4 - Nacional (processos produtivos básicos)</option>
+            <option value="5">5 - Nacional (-40% importado)</option>
+            <option value="6">6 - Estrangeira (importação direta, sem similar)</option>
+            <option value="7">7 - Estrangeira (mercado interno, sem similar)</option>
+            <option value="8">8 - Nacional (+70% importado)</option>
+          </select>
+        </div>
+        <div>
+          <label>CSOSN</label>
+          <input id="p_csosn" placeholder="Ex: 102" value="102" />
+        </div>
+      </div>
+
+      <div class="row">
+        <div>
+          <label>CEST (só se a categoria tiver Substituição Tributária)</label>
+          <input id="p_cest" placeholder="Deixe em branco se não se aplica" />
+        </div>
+      </div>
+
+      <div class="sep"></div>
       <h2>Estoque por grade</h2>
       <div class="warnBox small" style="margin-bottom:12px">
         Informe a quantidade de cada tamanho. Pode deixar 0 se quiser apenas cadastrar o produto agora (sem estoque).
@@ -2632,6 +2681,14 @@
     let fabric = document.getElementById("p_fabric").value.trim();
     if(fabric === "outro") fabric = document.getElementById("p_fabric_outro").value.trim();
 
+    // Dados fiscais (NF-e) — capturados uma vez, aplicados a todas as grades do lote
+    const ncm = document.getElementById("p_ncm").value.trim();
+    const cfop = document.getElementById("p_cfop").value.trim();
+    const cest = document.getElementById("p_cest").value.trim();
+    const csosn = document.getElementById("p_csosn").value.trim();
+    const origem = document.getElementById("p_origem").value;
+    const unidade = document.getElementById("p_unidade").value.trim() || "UN";
+
     const btnSave = document.getElementById("btnAddProduct");
     btnSave.disabled = true;
 
@@ -2646,7 +2703,9 @@
       const patch = {
         sku: baseSku ? `${baseSku}-${p.size}` : p.sku,
         name, cat, fabric, cost, price, note,
-        stock: newStock
+        stock: newStock,
+        ncm: ncm || null, cfop: cfop || null, cest: cest || null,
+        csosn: csosn || null, origem, unidade
       };
 
       const { data, error } = await sb.from("products").update(patch).eq("id", p.id).select().single();
@@ -2676,7 +2735,9 @@
     // (product_barcode_seq), substituindo o contador por dispositivo.
     const rows = Object.entries(grades).map(([size, stock])=>({
       sku: baseSku ? `${baseSku}-${size}` : "",
-      name, cat, fabric, size, cost, price, stock, note
+      name, cat, fabric, size, cost, price, stock, note,
+      ncm: ncm || null, cfop: cfop || null, cest: cest || null,
+      csosn: csosn || null, origem, unidade
     }));
 
     const { data, error } = await sb.from("products").insert(rows).select();
@@ -2692,9 +2753,13 @@
 
   document.getElementById("btnClearProduct").addEventListener("click", clearProductForm);
   function clearProductForm(){
-    ["p_sku","p_name","p_note","p_cost","p_price"].forEach(id=>document.getElementById(id).value="");
+    ["p_sku","p_name","p_note","p_cost","p_price","p_ncm","p_cest"].forEach(id=>document.getElementById(id).value="");
     ["p_stock_g1","p_stock_g2","p_stock_g3","p_stock_g4","p_stock_g5"].forEach(id=>document.getElementById(id).value="0");
-    
+    document.getElementById("p_cfop").value = "5102";
+    document.getElementById("p_csosn").value = "102";
+    document.getElementById("p_unidade").value = "UN";
+    document.getElementById("p_origem").value = "0";
+
     // Resetar selects
     document.getElementById("p_cat").value = "";
     document.getElementById("p_fabric").value = "";
@@ -2702,7 +2767,7 @@
     document.getElementById("p_fabric_outro").value = "";
     document.getElementById("p_cat_outro").style.display = "none";
     document.getElementById("p_fabric_outro").style.display = "none";
-    
+
     // Resetar modo de edição
     editingProductId = null;
     document.getElementById("btnAddProduct").textContent = "Gerar códigos e salvar";
@@ -2724,7 +2789,13 @@
     document.getElementById("p_cost").value = p.cost || "";
     document.getElementById("p_price").value = p.price || "";
     document.getElementById("p_note").value = p.note || "";
-    
+    document.getElementById("p_ncm").value = p.ncm || "";
+    document.getElementById("p_cfop").value = p.cfop || "5102";
+    document.getElementById("p_cest").value = p.cest || "";
+    document.getElementById("p_csosn").value = p.csosn || "102";
+    document.getElementById("p_unidade").value = p.unidade || "UN";
+    document.getElementById("p_origem").value = p.origem || "0";
+
     // Categoria: verificar se existe no select ou usar "outro"
     const catSelect = document.getElementById("p_cat");
     const catOptions = Array.from(catSelect.options).map(opt => opt.value);
