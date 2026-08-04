@@ -1940,8 +1940,9 @@
     }));
   }
 
-  // Usado pelas duas telas de entrada de estoque (bipar e busca manual).
-  async function applyStockEntry(p, qty, newCostRaw, note){
+  // Usado pelas duas telas de entrada de estoque (bipar e busca manual) e,
+  // com type="DEVOLUCAO", por deleteSale() ao excluir uma venda.
+  async function applyStockEntry(p, qty, newCostRaw, note, type="ENTRADA"){
     const patch = { stock: Math.max(0, toNum(p.stock) + qty) };
     if(newCostRaw !== "") patch.cost = Math.max(0, toNum(newCostRaw));
 
@@ -1950,7 +1951,7 @@
     Object.assign(p, updated);
 
     const { data: move, error: movErr } = await sb.from("stock_moves").insert({
-      type: "ENTRADA", barcode: p.barcode, product_id: p.id, qty, stock_after: p.stock, note
+      type, barcode: p.barcode, product_id: p.id, qty, stock_after: p.stock, note
     }).select().single();
     if(movErr) return { error: movErr.message };
 
@@ -1959,6 +1960,56 @@
       productId: move.product_id, qty: move.qty, stockAfter: move.stock_after, note: move.note
     });
     return { ok:true };
+  }
+
+  /* =========================
+     VENDAS — Supabase
+     db.sales vira cache local carregado com sales + sale_items + sale_payments
+     numa única query (embed do PostgREST), mapeado pro shape camelCase que
+     renderSalesTable/generatePDF/sendWhatsApp já esperam.
+  ========================= */
+  function mapSaleFromDb(row){
+    return {
+      id: row.id,
+      date: row.sold_at,
+      clientId: row.client_id,
+      vendedorId: row.vendedor_id,
+      channel: row.channel,
+      kind: row.kind,
+      pay: row.pay,
+      installments: row.installments,
+      discount: row.discount,
+      subtotal: row.subtotal,
+      totalBruto: row.total_bruto,
+      costTotal: row.cost_total,
+      feePct: row.fee_pct,
+      feeValue: row.fee_value,
+      netReceived: row.net_received,
+      profit: row.profit,
+      note: row.note,
+      paymentStatus: row.payment_status,
+      items: (row.sale_items||[]).map(it=>({
+        productId: it.product_id, name: it.name, cat: it.cat, fabric: it.fabric,
+        size: it.size, price: it.price, cost: it.cost, qty: it.qty, barcode: it.barcode
+      })),
+      payments: (row.sale_payments||[]).map(p=>({
+        id: p.id, date: p.paid_on, value: p.value, method: p.method,
+        installments: p.installments, feePct: p.fee_pct, feeValue: p.fee_value,
+        netValue: p.net_value, note: p.note
+      }))
+    };
+  }
+
+  async function loadSalesFromSupabase(){
+    const { data, error } = await sb.from("sales")
+      .select("*, sale_items(*), sale_payments(*)")
+      .order("sold_at", { ascending:false })
+      .limit(200);
+    if(error){
+      toast("Erro ao carregar vendas", error.message);
+      return;
+    }
+    db.sales = data.map(mapSaleFromDb);
   }
 
   let selectedProductId = null;
