@@ -1417,7 +1417,7 @@
 
       <h2>Importar backup</h2>
       <div class="warnBox small">
-        Importar substitui os dados atuais.
+        Desativado: os dados agora vivem no Supabase, compartilhados entre os 3 aparelhos. Importar um JSON aqui não muda o banco real.
       </div>
       <div class="sep"></div>
       <input type="file" id="fileImport" accept="application/json" />
@@ -5370,36 +5370,18 @@
     toast("Backup gerado","Arquivo baixado.");
   });
 
-  document.getElementById("btnImport").addEventListener("click", async ()=>{
-    const f = document.getElementById("fileImport").files?.[0];
-    if(!f) return toast("Selecione um arquivo","Escolha um JSON de backup.");
-    const txt = await f.text();
-    try{
-      const obj = JSON.parse(txt);
-      if(!obj.products || !obj.clients || !obj.sales || !obj.stockMoves) throw new Error("Estrutura inválida");
-      if(!obj.vendedores) obj.vendedores = [];
-      db = obj;
-      saveDB("Import");
-      toast("Importado","Dados restaurados.");
-      currentSale = { items:[], finalizedSaleId:null };
-      selectedProductId=null;
-      selectedClientId=null;
-      renderHome(); renderProducts(); renderClients(); renderVendedores(); renderStock(); renderSale(); runReport();
-    }catch(e){
-      toast("Falhou","Backup inválido.");
-    }
+  // Desde a migração pro Supabase, os dados reais vivem no servidor — importar
+  // um JSON aqui só mudaria a cópia em memória do navegador, que é substituída
+  // de novo pelo Supabase no próximo carregamento (ou seja, pareceria funcionar
+  // e depois "voltaria atrás" sozinho). Desativado de propósito em vez de deixar
+  // essa armadilha silenciosa. Restaurar um backup de verdade agora é uma tarefa
+  // de banco de dados, não um botão do app — ver CLAUDE.md.
+  document.getElementById("btnImport").addEventListener("click", ()=>{
+    toast("Importação desativada","Os dados agora vivem no Supabase — importar um JSON aqui não mudaria o banco real. Fale com quem administra o sistema se precisar restaurar um backup.");
   });
 
   document.getElementById("btnWipe").addEventListener("click", ()=>{
-    if(!confirm("ATENÇÃO: Isso vai apagar TUDO. Tem certeza?")) return;
-    localStorage.removeItem(KEY);
-    db = loadDB();
-    saveDB("Wipe");
-    currentSale = { items:[], finalizedSaleId:null };
-    selectedProductId=null;
-    selectedClientId=null;
-    toast("Zerado","Banco limpo.");
-    renderHome();
+    toast("Zerar desativado","Os dados agora vivem no Supabase — esse botão só limpava o navegador. Apagar dados reais agora precisa ser feito direto no banco, com cuidado.");
   });
 
   document.getElementById("btnResetCounter").addEventListener("click", ()=>{
