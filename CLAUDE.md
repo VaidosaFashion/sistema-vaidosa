@@ -108,7 +108,19 @@ Auditoria completa (pontos fortes, todos os achados com evidência, diagrama ant
 
 **Merge feito e publicado (2026-08-04).** `feature/supabase-migration` foi mesclado no `main` (merge commit, sem conflito) e já está no ar em `https://vaidosafashion.github.io/sistema-vaidosa/` — confirmado via `curl` que o HTML publicado tem a tela de login. Decisão do Kennedy: ir pro ar mesmo com Turnstile pendente. Ele testou os 4 fluxos com `confirm()` manualmente e confirmou que estão OK.
 
+## Step 4 — status (2026-08-04)
+
+**Gerador de etiqueta Zebra trazido pra dentro do sistema único, como aba "Etiquetas".** Feito no branch `feature/etiquetas-zebra`, mesclado no `main` depois de testado.
+
+- HTML/CSS/JS portados de `docs/etiquetas-legado/ETIQUETAS.HTML` quase sem mudança — o **design da etiqueta em si** (CODE128 via JsBarcode, rolo 32×50mm, `.eti-topo`/`.eti-tarja`/`.eti-tam` etc.) é o mesmo de antes, só a "moldura" ao redor (busca, botões) passou a seguir os estilos do sistema principal (`.card`, `.btn`).
+- **A mudança que importa**: em vez de `localStorage.getItem("vaidosa_lite_v4")` (o truque frágil de dois arquivos abertos no mesmo navegador), a aba lê `db.products` direto — o mesmo cache já carregado do Supabase que todo o resto do app usa. Isso mata a gambiarra descrita no topo deste arquivo por completo.
+- Impressão usa o truque padrão de "imprimir só um elemento": `@media print { body * { visibility:hidden } #folha-impressao, #folha-impressao * { visibility:visible } ... }` — esconde a sidebar/resto do app e imprime só a fila de etiquetas, sem precisar enumerar cada seção.
+- **Bug real encontrado e corrigido durante o teste**: a aba nova ficava com o conteúdo em branco ao clicar — esqueci de adicionar `"etiquetas"` no array `tabs` que `setTab()` usa pra decidir quais seções mostrar/esconder (`index.html`, variável `const tabs = [...]` perto de `setTab`). Se algum dia adicionar outra aba nova, **lembrar desse array** — é o erro mais fácil de repetir.
+- Testado no navegador: busca por nome encontra produto, seleciona, adiciona 3 etiquetas na fila com barcode real renderizado, "Limpar fila" funciona, "Imprimir" com fila vazia mostra aviso em vez de abrir o diálogo de impressão. Não dá pra verificar visualmente o resultado impresso em papel por este canal — vale um teste físico numa impressora Zebra de verdade antes de confiar 100%.
+- `ETIQUETAS.HTML` original (Google Drive) e a cópia legada dentro do repo (`docs/etiquetas-legado/`) ficam obsoletos a partir de agora — não precisam mais ser usados, mas não foram apagados.
+
 **Ainda pendente (não bloqueia o uso, mas vale voltar):**
 - Habilitar Turnstile no login (ver nota de segurança acima) — risco aceito por enquanto, não resolvido.
 - Migração dos dados históricos dos 3 aparelhos — o Kennedy sinalizou que pretende fazer um balanço físico e relançar tudo do zero quando confirmar que o sistema está bom, o que pode substituir essa migração inteira. Confirmar com ele antes de investir tempo nisso.
-- Step 4 do roteiro original (trazer o gerador de etiqueta Zebra pra dentro do sistema único, ver `docs/etiquetas-legado/ETIQUETAS.HTML`) e Step 5 (conector de marketplace Mercado Livre/TikTok Shop) continuam de pé como próximos passos, agora que o Step 1 está publicado.
+- Teste físico da etiqueta numa impressora Zebra real (ver acima).
+- Step 5 do roteiro original: conector de marketplace Mercado Livre/TikTok Shop.
