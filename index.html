@@ -372,6 +372,65 @@
     .statusPago{color:var(--ok);font-weight:600}
     .statusParcial{color:var(--warn);font-weight:600}
     .statusAberto{color:var(--bad);font-weight:600}
+
+    /* ===== Etiquetas (Zebra) — design da etiqueta em si preservado
+       igual ao ETIQUETAS.HTML original, só a "moldura" ao redor (busca,
+       botões) segue os estilos do sistema principal. ===== */
+    :root{
+      --w-etiqueta: 32mm;
+      --h-etiqueta: 50mm;
+    }
+    .eti-item-lista{
+      background:#f9fafb;border:1px solid var(--line);
+      padding:10px;border-radius:6px;font-size:13px;
+      cursor:pointer;transition:.15s ease;
+    }
+    .eti-item-lista:hover{border-color:var(--accent);background:#fdf2f8}
+    #folha-impressao{
+      background:#fff;
+      width:104mm;
+      min-height:200mm;
+      padding:0 1mm;
+      box-shadow:0 0 20px rgba(0,0,0,.15);
+      display:grid;
+      grid-template-columns:repeat(3,1fr);
+      grid-auto-rows:var(--h-etiqueta);
+      gap:0;
+      align-content:start;
+    }
+    .etiqueta{
+      width:var(--w-etiqueta);height:var(--h-etiqueta);
+      box-sizing:border-box;background:#fff;
+      display:flex;flex-direction:column;align-items:center;text-align:center;
+      padding:2mm 1mm;position:relative;
+      border:1px dashed #ddd;
+    }
+    .eti-topo{border:1px solid #000;width:90%;padding:2px 0;margin-bottom:3px}
+    .eti-topo-txt{
+      font-family:Arial,sans-serif;font-weight:900;font-size:10px;
+      text-transform:uppercase;letter-spacing:1px;line-height:1;
+      color:#fff;-webkit-text-stroke:.5px black;
+    }
+    .eti-plus{font-size:6px;letter-spacing:2px;color:#000;margin-top:1px;font-weight:bold}
+    .eti-tarja{background:#000;color:#fff;font-weight:bold;font-size:9px;padding:1px 6px;margin-bottom:2px}
+    .eti-barcode{width:90%;height:28px;margin:2px 0 0 0}
+    .eti-nome{font-size:9px;font-weight:bold;text-transform:uppercase;max-width:100%;white-space:nowrap;overflow:hidden}
+    .eti-ref{font-size:8px;font-weight:bold;margin-bottom:2px}
+    .eti-tam{font-size:24px;font-weight:900;line-height:1;margin-top:auto}
+    .crop-bl{position:absolute;bottom:2px;left:2px;width:4px;height:4px;border-bottom:1px solid #000;border-left:1px solid #000}
+    .crop-br{position:absolute;bottom:2px;right:2px;width:4px;height:4px;border-bottom:1px solid #000;border-right:1px solid #000}
+
+    /* Imprime só a fila de etiquetas, esconde o resto do app inteiro
+       (sidebar, outras abas) — independe de qual aba está com .hide */
+    @media print{
+      body *{ visibility:hidden; }
+      #folha-impressao, #folha-impressao *{ visibility:visible; }
+      #folha-impressao{
+        position:absolute; top:0; left:0;
+        box-shadow:none; width:100%; margin:0; padding:0;
+      }
+      .etiqueta{ border:none; page-break-inside:avoid; }
+    }
   </style>
 </head>
 <body>
@@ -411,6 +470,10 @@
     <button data-tab="estoque">
       <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg>
       Estoque
+    </button>
+    <button data-tab="etiquetas">
+      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m10 0v3a1 1 0 01-1 1H8a1 1 0 01-1-1v-3m10 0H7m0-9V4a1 1 0 011-1h8a1 1 0 011 1v4"/></svg>
+      Etiquetas
     </button>
     <button data-tab="clientes">
       <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/></svg>
@@ -570,6 +633,58 @@
       <div class="muted small" style="margin-top:10px" id="stockReportHint"></div>
     </div>
 
+  </section>
+
+  <section id="tab-etiquetas" class="grid cols2 hide">
+    <div class="card">
+      <h2>Gerador de etiquetas (Zebra)</h2>
+      <div class="warnBox small" style="margin-bottom:10px">
+        Busque o produto, ajuste a quantidade e adicione na fila. Imprima direto num rolo de 32×50mm (3 colunas).
+      </div>
+
+      <div class="row">
+        <div>
+          <label>Buscar produto (nome ou código de barras)</label>
+          <input id="eti_search" placeholder="Digite pra buscar..." autocomplete="off" />
+        </div>
+      </div>
+      <div id="eti_resultList" style="max-height:180px;overflow-y:auto;border:1px solid var(--line);border-radius:8px;margin-top:8px"></div>
+
+      <div class="sep"></div>
+
+      <label>Produto selecionado</label>
+      <div id="eti_selNome" style="font-weight:700;color:var(--accent);margin-bottom:8px">Nenhum</div>
+
+      <div class="row cols2">
+        <div>
+          <label>Tamanho</label>
+          <input id="eti_selTam" readonly />
+        </div>
+        <div>
+          <label>Quantidade de etiquetas</label>
+          <input id="eti_qtd" type="number" value="1" min="1" />
+        </div>
+      </div>
+
+      <div class="btns" style="margin-top:10px">
+        <button class="btn ok" id="btnEtiAdd">+ Adicionar na fila</button>
+      </div>
+
+      <div class="sep"></div>
+
+      <div class="btns">
+        <button class="btn ok" id="btnEtiPrint" style="padding:14px;font-size:15px">🖨️ Imprimir (Ctrl+P)</button>
+        <button class="btn bad" id="btnEtiClear">Limpar fila</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Fila de impressão</h2>
+      <div class="muted small" style="margin-bottom:10px">Pré-visualização do rolo — 3 colunas de 32×50mm cada.</div>
+      <div id="eti_previewWrap" style="overflow:auto;max-height:640px;display:flex;justify-content:center;background:#f3f4f6;border-radius:10px;padding:16px">
+        <div id="folha-impressao"></div>
+      </div>
+    </div>
   </section>
 
   <section id="tab-produtos" class="hide">
@@ -1703,6 +1818,7 @@
 <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
 
 <script>
   /* =========================
@@ -2365,7 +2481,7 @@
   /* =========================
      TABS
   ========================= */
-  const tabs = ["venda","clientes","produtos","estoque","vendedores","financeiro","relatorios","backup","home"];
+  const tabs = ["venda","clientes","produtos","estoque","etiquetas","vendedores","financeiro","relatorios","backup","home"];
   document.querySelectorAll("nav button").forEach(btn=>{
     btn.addEventListener("click", ()=>{
       const t = btn.dataset.tab;
@@ -3826,6 +3942,96 @@
       });
     });
   }
+
+  /* =========================
+     ETIQUETAS (Zebra)
+     Antes era um segundo arquivo HTML separado (ETIQUETAS.HTML) que lia
+     localStorage.getItem("vaidosa_lite_v4") — só funcionava por coincidência
+     de dois arquivos abertos no mesmo navegador. Agora é só mais uma aba
+     lendo db.products, o mesmo cache já carregado do Supabase.
+  ========================= */
+  let etiProdutoSelecionado = null;
+
+  function etiRenderSearch(){
+    const term = document.getElementById("eti_search").value.trim().toLowerCase();
+    const list = document.getElementById("eti_resultList");
+    list.innerHTML = "";
+    if(term.length < 1) return;
+
+    const matches = db.products.filter(p=>
+      (p.name && p.name.toLowerCase().includes(term)) ||
+      (p.barcode && String(p.barcode).toLowerCase().includes(term))
+    ).slice(0, 20);
+
+    matches.forEach(p=>{
+      const div = document.createElement("div");
+      div.className = "eti-item-lista";
+      div.innerHTML = `<b>${escapeHtml(p.name)}</b> <span style="float:right;color:var(--accent)">${escapeHtml(p.size||"")}</span><br><small class="muted">Ref: ${escapeHtml(p.barcode)} | Est: ${toNum(p.stock)}</small>`;
+      div.onclick = ()=>etiSelecionar(p);
+      list.appendChild(div);
+    });
+  }
+  document.getElementById("eti_search").addEventListener("input", etiRenderSearch);
+
+  function etiSelecionar(p){
+    etiProdutoSelecionado = p;
+    document.getElementById("eti_selNome").textContent = p.name;
+    document.getElementById("eti_selTam").value = p.size || "";
+    document.getElementById("eti_resultList").innerHTML = "";
+    document.getElementById("eti_search").value = "";
+    document.getElementById("eti_qtd").focus();
+  }
+
+  document.getElementById("btnEtiAdd").addEventListener("click", ()=>{
+    if(!etiProdutoSelecionado) return toast("Selecione um produto","Busque e escolha um produto primeiro.");
+
+    const qtd = Math.max(1, Math.floor(toNum(document.getElementById("eti_qtd").value)));
+    const area = document.getElementById("folha-impressao");
+    const p = etiProdutoSelecionado;
+
+    for(let i=0; i<qtd; i++){
+      const div = document.createElement("div");
+      div.className = "etiqueta";
+      div.innerHTML = `
+        <div class="eti-topo">
+          <div class="eti-topo-txt">VAIDOSA</div>
+          <div class="eti-topo-txt">FASHION</div>
+        </div>
+        <div class="eti-plus">PLUS SIZE</div>
+        <div class="eti-tarja">VAIDOSA</div>
+        <svg class="eti-barcode"></svg>
+        <div class="eti-nome">${escapeHtml(String(p.name).substring(0, 18))}</div>
+        <div class="eti-ref">REF: ${escapeHtml(p.sku || "000")}</div>
+        <div class="eti-tam">${escapeHtml(p.size||"")}</div>
+        <div class="crop-bl"></div>
+        <div class="crop-br"></div>
+      `;
+      area.appendChild(div);
+
+      JsBarcode(div.querySelector(".eti-barcode"), p.barcode, {
+        format: "CODE128",
+        lineColor: "#000",
+        width: 1.5,
+        height: 25,
+        displayValue: true,
+        fontSize: 10,
+        margin: 0
+      });
+    }
+    toast("Adicionado", `${qtd} etiqueta(s) de ${p.name} na fila.`);
+  });
+
+  document.getElementById("btnEtiPrint").addEventListener("click", ()=>{
+    if(!document.getElementById("folha-impressao").children.length){
+      return toast("Fila vazia","Adicione pelo menos uma etiqueta antes de imprimir.");
+    }
+    window.print();
+  });
+
+  document.getElementById("btnEtiClear").addEventListener("click", ()=>{
+    document.getElementById("folha-impressao").innerHTML = "";
+    toast("Fila limpa","Pronto para uma nova leva de etiquetas.");
+  });
 
   /* =========================
      ESTOQUE (ENTRADA)
