@@ -4352,7 +4352,7 @@
     renderSaleTotals();
   }
 
-  document.getElementById("btnFinalize").addEventListener("click", ()=>{
+  document.getElementById("btnFinalize").addEventListener("click", async ()=>{
     if(!currentSale.items.length) return toast("Sem itens","Bipe pelo menos 1 produto.");
 
     const cid = document.getElementById("sale_client").value || "";
@@ -4374,51 +4374,57 @@
       if(toNum(p.stock) < toNum(it.qty)) return toast("Estoque insuficiente",`${p.name} não tem quantidade suficiente.`);
     }
 
-    for(const it of currentSale.items){
-      const p = db.products.find(x=>x.id===it.productId);
-      p.stock = Math.max(0, toNum(p.stock) - toNum(it.qty));
-      db.stockMoves.unshift({ id:uid("m"), date: nowISO(), type:"SAIDA", barcode:p.barcode, productId:p.id, qty: -toNum(it.qty), stockAfter:p.stock, note:"Venda" });
-    }
-
     const totals = saleTotals(currentSale);
     const pay = document.getElementById("sale_pay").value || "";
     const inst = document.getElementById("sale_inst").value || "";
     const channel = document.getElementById("sale_channel").value || "Loja";
+    const note = document.getElementById("sale_note").value.trim();
 
-    const sale = {
-      id: uid("s"),
-      date: nowISO(),
-      clientId: cid,
-      vendedorId: vid,
-      channel,
-      kind,
-      pay,
-      installments: pay === "CartaoParcelado" ? Number(inst) : 0,
-      discount: totals.disc,
-      subtotal: totals.sub,
-      totalBruto: totals.totalBruto,
-      costTotal: totals.cost,
-      feePct: totals.feePct,
-      feeValue: totals.feeValue,
-      netReceived: totals.net,
-      profit: totals.profit,
-      note: document.getElementById("sale_note").value.trim(),
-      items: currentSale.items.map(it=>({ ...it })),
-      payments: [],
-      paymentStatus: "Aberto"
-    };
+    const btn = document.getElementById("btnFinalize");
+    btn.disabled = true;
+
+    // client_request_id: gerado uma vez, reenviado em qualquer retry — é o
+    // que faz create_sale() ser seguro contra duplo clique/toque (ver CLAUDE.md).
+    const clientRequestId = crypto.randomUUID();
+    const { data: saleRow, error } = await sb.rpc("create_sale", {
+      p_client_request_id: clientRequestId,
+      p_client_id: cid || null,
+      p_vendedor_id: vid || null,
+      p_channel: channel,
+      p_kind: kind,
+      p_pay: pay,
+      p_installments: pay === "CartaoParcelado" ? Number(inst) : 0,
+      p_discount: totals.disc,
+      p_note: note,
+      p_items: currentSale.items.map(it=>({ product_id: it.productId, qty: it.qty }))
+    });
+
+    btn.disabled = false;
+    if(error) return toast("Falhou", error.message);
+
+    // Espelha no cache local o que o servidor já fez de verdade (estoque
+    // baixado, stock_move gravado) — não recalcula nada, só reflete.
+    for(const it of currentSale.items){
+      const p = db.products.find(x=>x.id===it.productId);
+      if(p) p.stock = Math.max(0, toNum(p.stock) - toNum(it.qty));
+    }
+    await loadStockMovesFromSupabase();
+
+    const sale = mapSaleFromDb({ ...saleRow, sale_items: currentSale.items.map(it=>({
+      product_id: it.productId, name: it.name, cat: it.cat, fabric: it.fabric,
+      size: it.size, price: it.price, cost: it.cost, qty: it.qty, barcode: it.barcode
+    })), sale_payments: [] });
 
     if(kind === "Troca" && cid && c){
-      c.trocaCount = toNum(c.trocaCount||0) + 1;
+      const newCount = toNum(c.trocaCount||0) + 1;
+      const { error: cErr } = await sb.from("clients").update({ troca_count: newCount }).eq("id", cid);
+      if(!cErr) c.trocaCount = newCount;
     }
 
     db.sales.unshift(sale);
-    saveDB("Venda");
-    
-    const saleId = sale.id;
-    
-    toast("Finalizado","Venda #" + saleId.slice(-6).toUpperCase() + " salva com sucesso!");
-    
+
+    toast("Finalizado","Venda #" + sale.id.slice(-6).toUpperCase() + " salva com sucesso!");
+
     // Limpar tudo automaticamente após 1.5 segundos
     setTimeout(()=>{
       currentSale = { items:[], finalizedSaleId:null };
@@ -4434,7 +4440,7 @@
       renderSalesTable();
       toast("Pronto!","Sistema limpo para a próxima venda.");
     }, 1500);
-    
+
     renderSale();
     renderHome();
   });
@@ -4606,37 +4612,31 @@
     });
 
     tb.querySelectorAll("button[data-del]").forEach(b=>{
-      b.addEventListener("click", ()=>{
+      b.addEventListener("click", async ()=>{
         if(!confirm("Tem certeza? Isso vai devolver os itens ao estoque.")) return;
-        const sid = b.dataset.del;
-        deleteSale(sid);
+        b.disabled = true;
+        await deleteSale(b.dataset.del);
+        b.disabled = false;
       });
     });
   }
 
-  function deleteSale(saleId){
+  async function deleteSale(saleId){
     const s = db.sales.find(x=>x.id===saleId);
     if(!s) return toast("Não encontrado","Venda não existe.");
 
     for(const it of s.items){
       const p = db.products.find(x=>x.id===it.productId);
       if(p){
-        p.stock = toNum(p.stock) + toNum(it.qty);
-        db.stockMoves.unshift({
-          id: uid("m"),
-          date: nowISO(),
-          type: "DEVOLUCAO",
-          barcode: p.barcode,
-          productId: p.id,
-          qty: toNum(it.qty),
-          stockAfter: p.stock,
-          note: "Venda excluída"
-        });
+        const result = await applyStockEntry(p, toNum(it.qty), "", "Venda excluída", "DEVOLUCAO");
+        if(result.error) return toast("Falhou ao devolver estoque", result.error);
       }
     }
 
+    const { error } = await sb.from("sales").delete().eq("id", saleId);
+    if(error) return toast("Falhou", error.message);
+
     db.sales = db.sales.filter(x=>x.id!==saleId);
-    saveDB("Venda excluída");
     toast("Excluída","Venda removida e estoque devolvido.");
     renderSale();
     renderHome();
@@ -4683,7 +4683,7 @@
 
   document.getElementById("btnClosePayments").addEventListener("click", closePaymentModal);
 
-  document.getElementById("btnAddPayment").addEventListener("click", ()=>{
+  document.getElementById("btnAddPayment").addEventListener("click", async ()=>{
     const sale = db.sales.find(s=>s.id===currentPaymentSaleId);
     if(!sale) return;
 
@@ -4692,11 +4692,11 @@
 
     const method = document.getElementById("payment_method").value;
     const installments = method === "Credito" ? Number(document.getElementById("payment_installments").value) : 0;
-    
+
     // Calcular taxas se for cartão
     let feeValue = 0;
     let feePct = 0;
-    
+
     if(method === "Debito" || method === "Credito"){
       if(method === "Debito"){
         feePct = 2.99;
@@ -4708,41 +4708,42 @@
       }
       feeValue = (value * feePct) / 100;
     }
-    
+
     const netValue = value - feeValue; // Valor líquido que vai entrar
 
-    const payment = {
-      id: uid("pay"),
-      date: document.getElementById("payment_date").value || nowISO().slice(0,10),
-      value: value,
-      method: method,
-      installments: installments,
-      feePct: feePct,
-      feeValue: feeValue,
-      netValue: netValue,
+    const btn = document.getElementById("btnAddPayment");
+    btn.disabled = true;
+    const { data: row, error } = await sb.from("sale_payments").insert({
+      sale_id: sale.id,
+      paid_on: document.getElementById("payment_date").value || nowISO().slice(0,10),
+      value, method, installments,
+      fee_pct: feePct, fee_value: feeValue, net_value: netValue,
       note: document.getElementById("payment_note").value.trim()
-    };
+    }).select().single();
+    btn.disabled = false;
+    if(error) return toast("Falhou", error.message);
 
     if(!sale.payments) sale.payments = [];
-    sale.payments.push(payment);
-    
-    // Recalcular totais da venda
-    const totalPaid = sale.payments.reduce((a,p)=>a+toNum(p.value),0);
+    sale.payments.push({
+      id: row.id, date: row.paid_on, value: row.value, method: row.method,
+      installments: row.installments, feePct: row.fee_pct, feeValue: row.fee_value,
+      netValue: row.net_value, note: row.note
+    });
+
+    // O trigger recalc_sale_totals já atualizou isso no servidor — espelha
+    // localmente com a mesma fórmula pra não precisar buscar de novo.
     const totalFees = sale.payments.reduce((a,p)=>a+toNum(p.feeValue||0),0);
     const totalNet = sale.payments.reduce((a,p)=>a+toNum(p.netValue||p.value),0);
-    
-    // Atualizar valores na venda (Opção A: descontar taxa do lucro líquido)
     sale.feeValue = totalFees;
     sale.netReceived = totalNet;
     sale.profit = totalNet - toNum(sale.costTotal||0);
 
-    saveDB("Pagamento");
     toast("Registrado",`Pagamento de ${fmtBRL(value)} adicionado. ${feeValue > 0 ? `Taxa: ${fmtBRL(feeValue)}` : ""}`);
-    
+
     renderPaymentHistory(sale);
     renderSalesTable();
     renderHome();
-    
+
     document.getElementById("payment_value").value = "";
     document.getElementById("payment_note").value = "";
   });
@@ -5370,6 +5371,7 @@
     await loadStockMovesFromSupabase();
     await loadClientsFromSupabase();
     await loadVendedoresFromSupabase();
+    await loadSalesFromSupabase();
     setTab("venda");
     renderHome();
     renderProducts();
