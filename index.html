@@ -1907,6 +1907,21 @@
   let db = loadDB();
   let settings = loadSettings();
 
+  /* =========================
+     PRODUTOS — Supabase (Step 1, primeiro módulo migrado)
+     db.products vira um cache local sincronizado com a tabela `products`.
+     Todo o resto do app (render, busca por barcode, PDV) continua lendo
+     db.products normalmente — só a carga inicial e as mutações mudam.
+  ========================= */
+  async function loadProductsFromSupabase(){
+    const { data, error } = await sb.from("products").select("*").order("created_at", { ascending:false });
+    if(error){
+      toast("Erro ao carregar produtos", error.message);
+      return;
+    }
+    db.products = data;
+  }
+
   let selectedProductId = null;
   let selectedClientId = null;
   let editingClientId = null; // Controle de edição
@@ -2280,45 +2295,46 @@
     }
   });
   
-  document.getElementById("btnAddProduct").addEventListener("click", ()=>{
+  document.getElementById("btnAddProduct").addEventListener("click", async ()=>{
     const name = document.getElementById("p_name").value.trim();
     if(!name) return toast("Faltou nome","Preencha o nome do produto.");
 
     const baseSku = document.getElementById("p_sku").value.trim();
-    
+
     // Pegar categoria (do select ou do campo "outro")
     let cat = document.getElementById("p_cat").value.trim();
     if(cat === "outro") cat = document.getElementById("p_cat_outro").value.trim();
-    
+
     const cost = Math.max(0, toNum(document.getElementById("p_cost").value));
     const price = Math.max(0, toNum(document.getElementById("p_price").value));
     const note = document.getElementById("p_note").value.trim();
-    
+
     // Pegar tecido (do select ou do campo "outro")
     let fabric = document.getElementById("p_fabric").value.trim();
     if(fabric === "outro") fabric = document.getElementById("p_fabric_outro").value.trim();
+
+    const btnSave = document.getElementById("btnAddProduct");
+    btnSave.disabled = true;
 
     // ═══════════════════════════════════════
     // MODO EDIÇÃO: Salvar alterações
     // ═══════════════════════════════════════
     if(editingProductId){
       const p = db.products.find(x => x.id === editingProductId);
-      if(!p) return toast("Erro","Produto não encontrado.");
-      
-      // Atualizar dados
-      p.sku = baseSku ? `${baseSku}-${p.size}` : p.sku;
-      p.name = name;
-      p.cat = cat;
-      p.fabric = fabric;
-      p.cost = cost;
-      p.price = price;
-      p.note = note;
-      
-      // Atualizar estoque do tamanho específico
+      if(!p){ btnSave.disabled = false; return toast("Erro","Produto não encontrado."); }
+
       const newStock = Math.max(0, Math.floor(toNum(document.getElementById(`p_stock_${p.size.toLowerCase()}`).value)));
-      p.stock = newStock;
-      
-      saveDB("Produto editado");
+      const patch = {
+        sku: baseSku ? `${baseSku}-${p.size}` : p.sku,
+        name, cat, fabric, cost, price, note,
+        stock: newStock
+      };
+
+      const { data, error } = await sb.from("products").update(patch).eq("id", p.id).select().single();
+      btnSave.disabled = false;
+      if(error) return toast("Falhou", error.message);
+
+      Object.assign(p, data);
       toast("Salvo!","Alterações aplicadas com sucesso.");
       clearProductForm();
       renderProducts();
@@ -2337,33 +2353,19 @@
       G5: Math.max(0, Math.floor(toNum(document.getElementById("p_stock_g5").value)))
     };
 
-    let created = 0;
-    const codes = [];
-    for(const [size, stock] of Object.entries(grades)){
-      const code = generateNextCode();
-      codes.push(code);
-      const sku = baseSku ? `${baseSku}-${size}` : "";
-      
-      const p = {
-        id: uid("p"),
-        barcode: code,
-        sku,
-        name,
-        cat,
-        fabric,
-        size,
-        cost,
-        price,
-        stock,
-        note
-      };
+    // barcode NÃO é enviado — o Postgres gera pela sequência do servidor
+    // (product_barcode_seq), substituindo o contador por dispositivo.
+    const rows = Object.entries(grades).map(([size, stock])=>({
+      sku: baseSku ? `${baseSku}-${size}` : "",
+      name, cat, fabric, size, cost, price, stock, note
+    }));
 
-      db.products.unshift(p);
-      created++;
-    }
+    const { data, error } = await sb.from("products").insert(rows).select();
+    btnSave.disabled = false;
+    if(error) return toast("Falhou", error.message);
 
-    saveDB("Produto em lote");
-    toast("Códigos gerados",`${created} produto(s) criado(s): ${codes.join(", ")}`);
+    db.products = [...data, ...db.products];
+    toast("Códigos gerados",`${data.length} produto(s) criado(s): ${data.map(p=>p.barcode).join(", ")}`);
     clearProductForm();
     renderProducts();
     renderHome();
@@ -2444,17 +2446,20 @@
     document.querySelector("#tab-produtos").scrollIntoView({ behavior: "smooth" });
   });
 
-  document.getElementById("btnDeleteProduct").addEventListener("click", ()=>{
+  document.getElementById("btnDeleteProduct").addEventListener("click", async ()=>{
     if(!selectedProductId) return;
     const p = db.products.find(x=>x.id===selectedProductId);
     if(!p) return;
 
-    const used = db.sales.some(s=>s.items.some(it=>it.productId===p.id));
-    if(used) return toast("Bloqueado","Produto já apareceu em vendas. Para manter histórico, não excluo. Zere estoque e pare de usar.");
+    const { data: usedRows, error: checkErr } = await sb.from("sale_items").select("id").eq("product_id", p.id).limit(1);
+    if(checkErr) return toast("Erro", checkErr.message);
+    if(usedRows && usedRows.length) return toast("Bloqueado","Produto já apareceu em vendas. Para manter histórico, não excluo. Zere estoque e pare de usar.");
+
+    const { error } = await sb.from("products").delete().eq("id", p.id);
+    if(error) return toast("Falhou", error.message);
 
     db.products = db.products.filter(x=>x.id!==p.id);
     selectedProductId=null;
-    saveDB("Produto excluído");
     toast("Excluído","Produto removido.");
     renderProducts();
     renderHome();
@@ -5251,7 +5256,8 @@
   /* =========================
      INIT (chamado só depois do login, ver enterApp())
   ========================= */
-  function initApp(){
+  async function initApp(){
+    await loadProductsFromSupabase();
     setTab("venda");
     renderHome();
     renderProducts();

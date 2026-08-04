@@ -87,8 +87,15 @@ Auditoria completa (pontos fortes, todos os achados com evidência, diagrama ant
 - Testado de ponta a ponta no navegador (login Kennedy e Cristiane, PIN errado mostra erro, PIN certo entra, logout volta pra tela de login, sessão sobrevive a reload). Ver `enterApp()`/`checkExistingSession()`/`doLogin()` no topo do `<script>` principal.
 - **Para rodar localmente**: `npx serve -l 8934 -s ~/ZCodeProject/vaidosa-sistema` (o pacote `serve` já está instalado globalmente nesta máquina) — `python3 -m http.server` **não funciona** neste ambiente sandboxed (erro de permissão em `os.getcwd()`), por isso usamos `serve`.
 
+**Módulo Produtos migrado e testado (2026-08-03).** Padrão usado, para repetir nos próximos módulos:
+- `db.products` continua existindo como **cache local em memória**, só que agora é preenchido por `loadProductsFromSupabase()` (chamada no início de `initApp()`) em vez de vir do `localStorage`. Todo o código que só *lê* `db.products` (render, busca por barcode no PDV, filtros) não precisou mudar — é por isso que a conversão fica pequena por módulo.
+- Só os pontos de **mutação** mudaram: `btnAddProduct` (cria em lote por grade — agora via `sb.from("products").insert([...]).select()`, sem mandar `barcode`, deixando o Postgres gerar pela sequência; e edição via `sb.from("products").update(...).eq("id",...)`) e `btnDeleteProduct` (agora checa uso em `sale_items` direto no Supabase antes de deletar, em vez de checar `db.sales` local).
+- Botão de salvar agora desabilita durante o request (`btnSave.disabled = true/false`) — aplica o mesmo princípio de trava contra duplo clique nas telas já convertidas, mesmo fora dos 3 botões originalmente identificados no bug.
+- Testado no navegador de ponta a ponta: criar 5 produtos em lote (barcodes reais `VF0000XX` gerados pelo servidor), editar um (confirmado por `updated_at` mudando), excluir um (confirmado sumindo da tabela). Testes limpos depois, banco de produtos vazio de novo.
+- `generateNextCode()`/`getLastGeneratedCode()`/o botão "Redefinir contador" no Backup agora estão **vestigiais** (nada mais lê o contador de `localStorage` pra gerar barcode de produto novo) — não removidos ainda, só não fazem mais nada útil. Limpar isso é cosmético, não bloqueia nada.
+
 **Ainda faltando pra fechar o Step 1:**
 - Habilitar Turnstile no login (ver nota de segurança acima).
-- Trocar cada `db.x.push(...); saveDB(...)` no `index.html` por chamada real ao Supabase (via `supabase-js`, já incluído) — módulo por módulo: Produtos → Estoque → Vendas → Clientes → Vendedores → Financeiro. Login já não é mais bloqueio.
+- Repetir o padrão do módulo Produtos pros módulos restantes: Estoque → Vendas → Clientes → Vendedores → Financeiro (Vendas já tem a função `create_sale` idempotente pronta no banco, só falta o frontend chamar ela em vez de montar `sale` local).
 - Migração dos dados históricos dos 3 aparelhos (exportar backup de cada um, unir vendas/estoque por id, mas reconciliar clientes/produtos/categorias manualmente — provável colisão de barcode entre aparelhos, ver acima).
 - Corte único agendado pra produção (não gradual — ver plano completo em `~/.claude/plans/noble-doodling-hellman.md` na máquina do Kennedy).
