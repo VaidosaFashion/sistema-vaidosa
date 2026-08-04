@@ -2039,6 +2039,64 @@
     db.vendedores = data;
   }
 
+  /* =========================
+     FINANCEIRO — Supabase
+  ========================= */
+  const DEFAULT_CATEGORIAS = [
+    { nome: "Fixas - Aluguel", tipo: "despesa" },
+    { nome: "Fixas - Luz", tipo: "despesa" },
+    { nome: "Fixas - Água", tipo: "despesa" },
+    { nome: "Fixas - Internet", tipo: "despesa" },
+    { nome: "Fixas - Plano Saúde", tipo: "despesa" },
+    { nome: "Estoque - Fornecedores", tipo: "despesa" },
+    { nome: "Variáveis - Marketing", tipo: "despesa" },
+    { nome: "Variáveis - Manutenção", tipo: "despesa" },
+    { nome: "Pessoal - Salários", tipo: "despesa" },
+    { nome: "Vendas", tipo: "receita" },
+    { nome: "Outras Receitas", tipo: "receita" }
+  ];
+
+  async function loadCategoriasFromSupabase(){
+    const { data, error } = await sb.from("categorias").select("*").order("nome");
+    if(error){
+      toast("Erro ao carregar categorias", error.message);
+      return;
+    }
+    db.categorias = data;
+  }
+
+  function mapContaFromDb(row){
+    return {
+      id: row.id, tipo: row.tipo, descricao: row.descricao, valor: row.valor,
+      status: row.status, proximoVencimento: row.proximo_vencimento, obs: row.obs,
+      categoriaId: row.categoria_id, categoriaNome: row.categoria_nome,
+      recorrencia: row.recorrencia, parcelas: row.parcelas, parcelaAtual: row.parcela_atual,
+      dataInicio: row.data_inicio, clienteId: row.cliente_id, clienteNome: row.cliente_nome,
+      formaRecebimento: row.forma_recebimento
+    };
+  }
+
+  async function loadContasFromSupabase(){
+    const { data, error } = await sb.from("v_contas").select("*").order("proximo_vencimento");
+    if(error){
+      toast("Erro ao carregar contas", error.message);
+      return;
+    }
+    db.contas = data.map(mapContaFromDb);
+  }
+
+  async function loadMovimentacoesFromSupabase(){
+    const { data, error } = await sb.from("movimentacoes").select("*").order("data_pagamento", { ascending:false }).limit(300);
+    if(error){
+      toast("Erro ao carregar movimentações", error.message);
+      return;
+    }
+    db.movimentacoes = data.map(m=>({
+      id: m.id, contaId: m.conta_id, tipo: m.tipo, descricao: m.descricao,
+      valor: m.valor, data: m.data, dataPagamento: m.data_pagamento, pago: m.pago
+    }));
+  }
+
   let selectedProductId = null;
   let selectedClientId = null;
   let editingClientId = null; // Controle de edição
@@ -2868,24 +2926,11 @@
   ========================= */
   
   // Inicializar categorias padrão se não existirem
-  function initCategoriasFinanceiro(){
+  async function initCategoriasFinanceiro(){
     if(!db.categorias || db.categorias.length === 0){
-      db.categorias = [
-        // Despesas
-        {id: uid("cat"), nome: "Fixas - Aluguel", tipo: "despesa"},
-        {id: uid("cat"), nome: "Fixas - Luz", tipo: "despesa"},
-        {id: uid("cat"), nome: "Fixas - Água", tipo: "despesa"},
-        {id: uid("cat"), nome: "Fixas - Internet", tipo: "despesa"},
-        {id: uid("cat"), nome: "Fixas - Plano Saúde", tipo: "despesa"},
-        {id: uid("cat"), nome: "Estoque - Fornecedores", tipo: "despesa"},
-        {id: uid("cat"), nome: "Variáveis - Marketing", tipo: "despesa"},
-        {id: uid("cat"), nome: "Variáveis - Manutenção", tipo: "despesa"},
-        {id: uid("cat"), nome: "Pessoal - Salários", tipo: "despesa"},
-        // Receitas
-        {id: uid("cat"), nome: "Vendas", tipo: "receita"},
-        {id: uid("cat"), nome: "Outras Receitas", tipo: "receita"}
-      ];
-      saveDB("Categorias inicializadas");
+      const { data, error } = await sb.from("categorias").insert(DEFAULT_CATEGORIAS).select();
+      if(error) return toast("Erro ao criar categorias padrão", error.message);
+      db.categorias = data;
     }
   }
 
@@ -2943,24 +2988,23 @@
     document.getElementById("fin_filtroPagarCategoria").innerHTML = '<option value="">Todas</option>' + despesasHtml;
   }
 
-  window.deleteCategoria = function(id){
+  window.deleteCategoria = async function(id){
     if(!confirm("Excluir esta categoria?")) return;
+    const { error } = await sb.from("categorias").delete().eq("id", id);
+    if(error) return toast("Falhou", error.message);
     db.categorias = db.categorias.filter(c => c.id !== id);
-    saveDB("Categoria excluída");
     renderCategorias();
   };
 
-  document.getElementById("btnAddCategoria").addEventListener("click", ()=>{
+  document.getElementById("btnAddCategoria").addEventListener("click", async ()=>{
     const nome = document.getElementById("fin_novaCategoriaNome").value.trim();
     const tipo = document.getElementById("fin_novaCategoriaTipo").value;
     if(!nome) return toast("Faltou nome","Preencha o nome da categoria.");
-    
-    db.categorias.push({
-      id: uid("cat"),
-      nome,
-      tipo
-    });
-    saveDB("Categoria adicionada");
+
+    const { data, error } = await sb.from("categorias").insert({ nome, tipo }).select().single();
+    if(error) return toast("Falhou", error.message);
+
+    db.categorias.push(data);
     document.getElementById("fin_novaCategoriaNome").value = "";
     renderCategorias();
     toast("Sucesso!","Categoria adicionada.");
@@ -2986,7 +3030,7 @@
     document.getElementById("modalContaPagar").style.display = "none";
   });
 
-  document.getElementById("btnSalvarPagar").addEventListener("click", ()=>{
+  document.getElementById("btnSalvarPagar").addEventListener("click", async ()=>{
     const descricao = document.getElementById("pagarDescricao").value.trim();
     const categoriaId = document.getElementById("pagarCategoria").value;
     const valor = Math.max(0, toNum(document.getElementById("pagarValor").value));
@@ -3002,39 +3046,37 @@
     if(!vencimento) return toast("Faltou vencimento","Selecione a data de vencimento.");
 
     const categoria = db.categorias.find(c => c.id === categoriaId);
+    const btn = document.getElementById("btnSalvarPagar");
+    btn.disabled = true;
 
     if(editId){
       // Editar conta existente
+      const { data, error } = await sb.from("contas").update({
+        descricao, categoria_id: categoriaId, valor, proximo_vencimento: vencimento, obs
+      }).eq("id", editId).select().single();
+      btn.disabled = false;
+      if(error) return toast("Falhou", error.message);
+
       const conta = db.contas.find(c => c.id === editId);
-      if(conta){
-        conta.descricao = descricao;
-        conta.categoriaId = categoriaId;
-        conta.categoriaNome = categoria ? categoria.nome : "";
-        conta.valor = valor;
-        conta.proximoVencimento = vencimento;
-        conta.obs = obs;
-        saveDB("Conta a pagar atualizada");
-        toast("Atualizado!","Conta a pagar atualizada.");
-      }
+      if(conta) Object.assign(conta, mapContaFromDb({ ...data, categoria_nome: categoria?categoria.nome:"" }));
+      toast("Atualizado!","Conta a pagar atualizada.");
     } else {
-      // Nova conta
-      const novaConta = {
-        id: uid("fin"),
-        tipo: "pagar",
-        descricao,
-        categoriaId,
-        categoriaNome: categoria ? categoria.nome : "",
-        valor,
-        recorrencia,
-        parcelas,
-        parcelaAtual: 1,
-        dataInicio: vencimento,
-        proximoVencimento: vencimento,
-        status: "ativo",
-        obs
-      };
-      db.contas.push(novaConta);
-      saveDB("Conta a pagar criada");
+      const { data, error } = await sb.rpc("create_conta", {
+        p_client_request_id: crypto.randomUUID(),
+        p_tipo: "pagar",
+        p_descricao: descricao,
+        p_valor: valor,
+        p_proximo_vencimento: vencimento,
+        p_obs: obs,
+        p_categoria_id: categoriaId,
+        p_recorrencia: recorrencia,
+        p_parcelas: parcelas,
+        p_data_inicio: vencimento
+      });
+      btn.disabled = false;
+      if(error) return toast("Falhou", error.message);
+
+      db.contas.push(mapContaFromDb({ ...data, categoria_nome: categoria?categoria.nome:"" }));
       toast("Sucesso!",`Conta criada${recorrencia !== "unica" ? ` com ${parcelas} parcelas` : ""}.`);
     }
 
@@ -3094,36 +3136,38 @@
     }).join("");
   }
 
-  window.pagarConta = function(id){
+  window.pagarConta = async function(id){
     const conta = db.contas.find(c => c.id === id);
     if(!conta) return;
 
-    // Registrar movimentação
-    db.movimentacoes.push({
-      id: uid("mov"),
-      contaId: id,
-      tipo: "pagar",
+    const hoje = new Date().toISOString().split("T")[0];
+    const { data: mov, error: movErr } = await sb.from("movimentacoes").insert({
+      conta_id: id, tipo: "pagar",
       descricao: `${conta.descricao} - Parcela ${conta.parcelaAtual}/${conta.parcelas}`,
-      valor: conta.valor,
-      data: new Date().toISOString().split("T")[0],
-      dataPagamento: new Date().toISOString().split("T")[0],
-      pago: true
-    });
+      valor: conta.valor, data: hoje, data_pagamento: hoje, pago: true
+    }).select().single();
+    if(movErr) return toast("Falhou", movErr.message);
 
-    // Atualizar conta
+    const patch = {};
     if(conta.recorrencia === "unica" || conta.parcelaAtual >= conta.parcelas){
-      conta.status = "concluido";
+      patch.status = "concluido";
     } else {
-      conta.parcelaAtual++;
-      // Calcular próximo vencimento
+      patch.parcela_atual = conta.parcelaAtual + 1;
       if(conta.recorrencia === "semanal"){
-        conta.proximoVencimento = addWeeks(new Date(conta.proximoVencimento), 1).toISOString().split("T")[0];
+        patch.proximo_vencimento = addWeeks(new Date(conta.proximoVencimento), 1).toISOString().split("T")[0];
       } else if(conta.recorrencia === "mensal"){
-        conta.proximoVencimento = addMonths(new Date(conta.proximoVencimento), 1).toISOString().split("T")[0];
+        patch.proximo_vencimento = addMonths(new Date(conta.proximoVencimento), 1).toISOString().split("T")[0];
       }
     }
 
-    saveDB("Conta paga");
+    const { error: contaErr } = await sb.from("contas").update(patch).eq("id", id);
+    if(contaErr) return toast("Falhou", contaErr.message);
+
+    db.movimentacoes.unshift({ id: mov.id, contaId: mov.conta_id, tipo: mov.tipo, descricao: mov.descricao, valor: mov.valor, data: mov.data, dataPagamento: mov.data_pagamento, pago: mov.pago });
+    if(patch.status) conta.status = patch.status;
+    if(patch.parcela_atual) conta.parcelaAtual = patch.parcela_atual;
+    if(patch.proximo_vencimento) conta.proximoVencimento = patch.proximo_vencimento;
+
     toast("Pago!","Pagamento registrado.");
     renderFinanceiro();
   };
@@ -3149,29 +3193,34 @@
     document.getElementById("modalContaPagar").style.display = "flex";
   };
 
-  window.excluirConta = function(id){
+  window.excluirConta = async function(id){
     if(!confirm("Excluir esta conta?")) return;
+    // movimentacoes tem ON DELETE CASCADE a partir de contas, mas o cache
+    // local precisa ser limpo manualmente do mesmo jeito.
+    const { error } = await sb.from("contas").delete().eq("id", id);
+    if(error) return toast("Falhou", error.message);
     db.contas = db.contas.filter(c => c.id !== id);
     db.movimentacoes = db.movimentacoes.filter(m => m.contaId !== id);
-    saveDB("Conta excluída");
     toast("Excluído","Conta removida.");
     renderFinanceiro();
   };
 
-  window.cancelarPagamento = function(id, tipo){
+  window.cancelarPagamento = async function(id, tipo){
     const tipoTexto = tipo === "pagar" ? "pagamento" : "recebimento";
     if(!confirm(`Reabrir esta conta? O ${tipoTexto} será cancelado e a conta voltará como pendente.`)) return;
-    
+
     const conta = db.contas.find(c => c.id === id);
     if(!conta) return;
-    
-    // Voltar status para ativo
+
+    const { error: contaErr } = await sb.from("contas").update({ status: "ativo" }).eq("id", id);
+    if(contaErr) return toast("Falhou", contaErr.message);
+
+    const { error: movErr } = await sb.from("movimentacoes").delete().eq("conta_id", id);
+    if(movErr) return toast("Falhou", movErr.message);
+
     conta.status = "ativo";
-    
-    // Remover movimentação
     db.movimentacoes = db.movimentacoes.filter(m => m.contaId !== id);
-    
-    saveDB("Pagamento cancelado");
+
     toast("Reaberto!", "Conta voltou como pendente.");
     renderFinanceiro();
   };
@@ -3213,7 +3262,7 @@
     document.getElementById("modalContaReceber").style.display = "none";
   });
 
-  document.getElementById("btnSalvarReceber").addEventListener("click", ()=>{
+  document.getElementById("btnSalvarReceber").addEventListener("click", async ()=>{
     const descricao = document.getElementById("receberDescricao").value.trim();
     const clienteId = document.getElementById("receberCliente").value;
     const valor = Math.max(0, toNum(document.getElementById("receberValor").value));
@@ -3227,35 +3276,35 @@
     if(!vencimento) return toast("Faltou vencimento","Selecione a data de vencimento.");
 
     const cliente = clienteId ? db.clients.find(c => c.id === clienteId) : null;
+    const btn = document.getElementById("btnSalvarReceber");
+    btn.disabled = true;
 
     if(editId){
+      const { data, error } = await sb.from("contas").update({
+        descricao, cliente_id: clienteId || null, valor,
+        proximo_vencimento: vencimento, forma_recebimento: forma, obs
+      }).eq("id", editId).select().single();
+      btn.disabled = false;
+      if(error) return toast("Falhou", error.message);
+
       const conta = db.contas.find(c => c.id === editId);
-      if(conta){
-        conta.descricao = descricao;
-        conta.clienteId = clienteId;
-        conta.clienteNome = cliente ? cliente.name : "";
-        conta.valor = valor;
-        conta.proximoVencimento = vencimento;
-        conta.formaRecebimento = forma;
-        conta.obs = obs;
-        saveDB("Conta a receber atualizada");
-        toast("Atualizado!","Conta a receber atualizada.");
-      }
+      if(conta) Object.assign(conta, mapContaFromDb({ ...data, cliente_nome: cliente?cliente.name:"" }));
+      toast("Atualizado!","Conta a receber atualizada.");
     } else {
-      const novaConta = {
-        id: uid("fin"),
-        tipo: "receber",
-        descricao,
-        clienteId,
-        clienteNome: cliente ? cliente.name : "",
-        valor,
-        proximoVencimento: vencimento,
-        formaRecebimento: forma,
-        status: "ativo",
-        obs
-      };
-      db.contas.push(novaConta);
-      saveDB("Conta a receber criada");
+      const { data, error } = await sb.rpc("create_conta", {
+        p_client_request_id: crypto.randomUUID(),
+        p_tipo: "receber",
+        p_descricao: descricao,
+        p_valor: valor,
+        p_proximo_vencimento: vencimento,
+        p_obs: obs,
+        p_cliente_id: clienteId || null,
+        p_forma_recebimento: forma
+      });
+      btn.disabled = false;
+      if(error) return toast("Falhou", error.message);
+
+      db.contas.push(mapContaFromDb({ ...data, cliente_nome: cliente?cliente.name:"" }));
       toast("Sucesso!","Conta a receber criada.");
     }
 
@@ -3432,23 +3481,23 @@
   document.getElementById("fin_fluxoTipo").addEventListener("change", renderFluxoCaixa);
   document.getElementById("fin_fluxoStatus").addEventListener("change", renderFluxoCaixa);
 
-  window.receberConta = function(id){
+  window.receberConta = async function(id){
     const conta = db.contas.find(c => c.id === id);
     if(!conta) return;
 
-    db.movimentacoes.push({
-      id: uid("mov"),
-      contaId: id,
-      tipo: "receber",
-      descricao: conta.descricao,
-      valor: conta.valor,
-      data: new Date().toISOString().split("T")[0],
-      dataPagamento: new Date().toISOString().split("T")[0],
-      pago: true
-    });
+    const hoje = new Date().toISOString().split("T")[0];
+    const { data: mov, error: movErr } = await sb.from("movimentacoes").insert({
+      conta_id: id, tipo: "receber", descricao: conta.descricao,
+      valor: conta.valor, data: hoje, data_pagamento: hoje, pago: true
+    }).select().single();
+    if(movErr) return toast("Falhou", movErr.message);
 
+    const { error: contaErr } = await sb.from("contas").update({ status: "concluido" }).eq("id", id);
+    if(contaErr) return toast("Falhou", contaErr.message);
+
+    db.movimentacoes.unshift({ id: mov.id, contaId: mov.conta_id, tipo: mov.tipo, descricao: mov.descricao, valor: mov.valor, data: mov.data, dataPagamento: mov.data_pagamento, pago: mov.pago });
     conta.status = "concluido";
-    saveDB("Conta recebida");
+
     toast("Recebido!","Recebimento registrado.");
     renderFinanceiro();
   };
@@ -3703,8 +3752,8 @@
     });
   }
 
-  function renderFinanceiro(){
-    initCategoriasFinanceiro();
+  async function renderFinanceiro(){
+    await initCategoriasFinanceiro();
     renderCategorias();
     popularMesesFluxo();
     popularMesesHistorico();
@@ -5372,6 +5421,9 @@
     await loadClientsFromSupabase();
     await loadVendedoresFromSupabase();
     await loadSalesFromSupabase();
+    await loadCategoriasFromSupabase();
+    await loadContasFromSupabase();
+    await loadMovimentacoesFromSupabase();
     setTab("venda");
     renderHome();
     renderProducts();
