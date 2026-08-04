@@ -1922,6 +1922,45 @@
     db.products = data;
   }
 
+  /* =========================
+     ESTOQUE — Supabase
+     stock_moves usa snake_case no banco; mapeamos pro shape camelCase
+     que o resto do app (renderStock) já espera, pra não precisar
+     reescrever o render.
+  ========================= */
+  async function loadStockMovesFromSupabase(){
+    const { data, error } = await sb.from("stock_moves").select("*").order("moved_at", { ascending:false }).limit(200);
+    if(error){
+      toast("Erro ao carregar estoque", error.message);
+      return;
+    }
+    db.stockMoves = data.map(m=>({
+      id: m.id, date: m.moved_at, type: m.type, barcode: m.barcode,
+      productId: m.product_id, qty: m.qty, stockAfter: m.stock_after, note: m.note
+    }));
+  }
+
+  // Usado pelas duas telas de entrada de estoque (bipar e busca manual).
+  async function applyStockEntry(p, qty, newCostRaw, note){
+    const patch = { stock: Math.max(0, toNum(p.stock) + qty) };
+    if(newCostRaw !== "") patch.cost = Math.max(0, toNum(newCostRaw));
+
+    const { data: updated, error: updErr } = await sb.from("products").update(patch).eq("id", p.id).select().single();
+    if(updErr) return { error: updErr.message };
+    Object.assign(p, updated);
+
+    const { data: move, error: movErr } = await sb.from("stock_moves").insert({
+      type: "ENTRADA", barcode: p.barcode, product_id: p.id, qty, stock_after: p.stock, note
+    }).select().single();
+    if(movErr) return { error: movErr.message };
+
+    db.stockMoves.unshift({
+      id: move.id, date: move.moved_at, type: move.type, barcode: move.barcode,
+      productId: move.product_id, qty: move.qty, stockAfter: move.stock_after, note: move.note
+    });
+    return { ok:true };
+  }
+
   let selectedProductId = null;
   let selectedClientId = null;
   let editingClientId = null; // Controle de edição
@@ -3670,32 +3709,21 @@
     }
   });
 
-  document.getElementById("btnStockIn").addEventListener("click", ()=>{
+  document.getElementById("btnStockIn").addEventListener("click", async ()=>{
     const code = document.getElementById("s_barcode").value.trim();
     const qty = Math.max(1, Math.floor(toNum(document.getElementById("s_qty").value)));
     const matches = findProductsByBarcode(code);
-    
+
     if(!matches.length) return toast("Não encontrado","Cadastre o produto antes.");
     if(matches.length > 1) return toast("Múltiplos produtos","Esse barcode tem mais de um produto. Ajuste no cadastro.");
 
     const p = matches[0];
-    const newCost = document.getElementById("s_cost").value.trim();
-    if(newCost!=="") p.cost = Math.max(0, toNum(newCost));
+    const btn = document.getElementById("btnStockIn");
+    btn.disabled = true;
+    const result = await applyStockEntry(p, qty, document.getElementById("s_cost").value.trim(), document.getElementById("s_note").value.trim());
+    btn.disabled = false;
+    if(result.error) return toast("Falhou", result.error);
 
-    p.stock = Math.max(0, toNum(p.stock) + qty);
-
-    db.stockMoves.unshift({
-      id: uid("m"),
-      date: nowISO(),
-      type:"ENTRADA",
-      barcode:p.barcode,
-      productId:p.id,
-      qty: qty,
-      stockAfter:p.stock,
-      note: document.getElementById("s_note").value.trim()
-    });
-
-    saveDB("Estoque");
     toast("Entrada lançada",`${p.name} +${qty} no estoque.`);
     document.getElementById("s_barcode").value="";
     document.getElementById("s_qty").value="1";
@@ -3794,30 +3822,19 @@
 
   document.getElementById("btnCancelStockEntry").addEventListener("click", closeStockEntryModal);
 
-  document.getElementById("btnConfirmStockEntry").addEventListener("click", ()=>{
+  document.getElementById("btnConfirmStockEntry").addEventListener("click", async ()=>{
     const p = db.products.find(x=>x.id===currentStockEntryProductId);
     if(!p) return toast("Erro","Produto não encontrado.");
 
     const qty = Math.max(1, Math.floor(toNum(document.getElementById("stock_entry_qty").value)));
-    const newCost = document.getElementById("stock_entry_cost").value.trim();
-    
-    if(newCost!=="") p.cost = Math.max(0, toNum(newCost));
-    p.stock = Math.max(0, toNum(p.stock) + qty);
+    const btn = document.getElementById("btnConfirmStockEntry");
+    btn.disabled = true;
+    const result = await applyStockEntry(p, qty, document.getElementById("stock_entry_cost").value.trim(), document.getElementById("stock_entry_note").value.trim());
+    btn.disabled = false;
+    if(result.error) return toast("Falhou", result.error);
 
-    db.stockMoves.unshift({
-      id: uid("m"),
-      date: nowISO(),
-      type:"ENTRADA",
-      barcode:p.barcode,
-      productId:p.id,
-      qty: qty,
-      stockAfter:p.stock,
-      note: document.getElementById("stock_entry_note").value.trim()
-    });
-
-    saveDB("Estoque");
     toast("Entrada lançada",`${p.name} +${qty} no estoque.`);
-    
+
     closeStockEntryModal();
     renderStock();
     renderHome();
@@ -5258,6 +5275,7 @@
   ========================= */
   async function initApp(){
     await loadProductsFromSupabase();
+    await loadStockMovesFromSupabase();
     setTab("venda");
     renderHome();
     renderProducts();
