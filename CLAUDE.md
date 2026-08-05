@@ -4,10 +4,12 @@ Leia este arquivo inteiro antes de mexer em qualquer coisa. Ele existe para que 
 
 ## Negócio
 
-Loja de roupa feminina plus size ("Vaidosa Fashion Plus"). Uso interno por **3 pessoas**, cada uma normalmente num aparelho diferente:
+Loja de roupa feminina plus size ("Vaidosa Fashion Plus"). Uso interno por **3 pessoas**:
 - **Kennedy** — ADM
 - **Cristiane** — ADM e vendas
 - **Tatiane** (cunhada do Kennedy) — vendas
+
+**Correção (2026-08-05, confirmado pelo Kennedy): antes da migração, o sistema sempre rodou em UM computador só**, não em 3 aparelhos separados como a auditoria original assumiu (a suposição de "3 aparelhos com localStorage isolado" está em várias seções abaixo e no histórico do plano — mantida por registro histórico, mas era uma suposição, não um fato confirmado, e se revelou errada na prática). Na prática isso significa: só existe **um** backup/histórico de `localStorage` de verdade pra migrar, sem risco de conflito entre cópias divergentes do mesmo cliente/produto/venda feitas em aparelhos diferentes — o cenário de "colisão de barcode entre 3 aparelhos" descrito abaixo era um risco teórico que nunca se concretizou.
 
 Vendas hoje são presenciais (loja) e por WhatsApp/Instagram/tráfego. Objetivo declarado: abrir canais de **marketplace (Mercado Livre, TikTok Shop)** em breve, o que exige estoque sincronizado de verdade.
 
@@ -103,7 +105,7 @@ Auditoria completa (pontos fortes, todos os achados com evidência, diagrama ant
 - **Vendedores** — CRUD simples. Cristiane e Tatiane já existem como vendedoras (criadas junto com o login) — confirmado aparecendo certo na tela.
 - **Financeiro** — `categorias` semeia as 11 categorias padrão só na primeira visita à aba (checa se a tabela está vazia, não semeia toda vez). `contas` carrega da **view `v_contas`** (join ao vivo com categoria/cliente, substitui o texto congelado antigo). Criação de conta usa a RPC `create_conta`; pagar/receber insere uma `movimentacao` e atualiza a conta (o "parcelamento" sempre foi 1 registro avançando em campo `parcela_atual`/`proximo_vencimento`, nunca N registros — preservado assim).
 - **Backup** — "Importar backup" e "Zerar tudo" foram **removidos** (2026-08-04, a pedido do Kennedy: deixar botão desativado sem função era confuso). Só mexiam no `localStorage`/cache local, que já era irrelevante desde a migração pro Supabase. "Baixar backup (JSON)" continua funcionando normalmente, é só um snapshot do que está carregado.
-- **Decisão sobre dados históricos dos 3 aparelhos (2026-08-04): não importar.** Kennedy avaliou e optou por recadastrar tudo do zero no sistema novo, em vez de migrar o backup antigo — motivos: grade de tamanho bagunçada nos dados antigos (motivo original da reforma), gerador de etiqueta antes era separado (dados não bateriam com o modelo novo), e cadastrar de novo já entra com SKU e campos fiscais corretos desde o início, sem risco de divergência que exigiria refazer de qualquer forma. Não construir importação de backup a menos que ele peça de novo.
+- **Decisão sobre dados históricos (2026-08-04/05, refinada):** **produtos** — Kennedy vai recadastrar do zero (grade de tamanho bagunçada nos dados antigos foi o motivo original da reforma; cadastrar de novo já entra com SKU e campos fiscais corretos). **Vendas e clientes** — depois de esclarecido que o sistema sempre rodou num computador só (não 3 aparelhos, ver correção no topo do arquivo), não existe risco de conflito entre cópias divergentes — Kennedy quer preservar esse histórico. Import ainda **não construído**: falta ele mandar o arquivo de backup JSON (botão "Baixar backup (JSON)" na aba Backup & Dados) pra eu escrever o script de importação (vendas/sale_items/sale_payments/stock_moves + clientes, produtos ficam de fora de propósito).
 
 **Os 4 fluxos com `confirm()` (excluir venda, reabrir conta, excluir conta, excluir categoria) foram testados manualmente pelo Kennedy em 2026-08-04 — confirmados funcionando.** (Não puderam ser testados por automação nesta sessão porque o `confirm()` nativo do navegador é suprimido pela ferramenta de teste usada.)
 
