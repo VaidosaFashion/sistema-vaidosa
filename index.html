@@ -2084,6 +2084,22 @@
     return v.toLocaleString("pt-BR",{style:"currency",currency:"BRL"});
   }
   function escapeHtml(s){ return String(s??"").replace(/[&<>"']/g,m=>({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;" }[m])); }
+  // Formata uma data-SÓ (sem hora, tipo "2026-08-01" vindo de um campo `date`
+  // do Postgres) direto pela string — não usar new Date("2026-08-01") pra
+  // isso: é interpretado como meia-noite UTC, e num fuso atrás de UTC (como o
+  // do Brasil) vira o dia anterior ao renderizar em hora local.
+  function fmtDataSo(dataStr){
+    if(!dataStr) return "";
+    const [ano, mes, dia] = String(dataStr).slice(0,10).split("-");
+    return `${dia}/${mes}/${ano}`;
+  }
+  // Mesma ideia de fmtDataSo, mas devolvendo um Date de meia-noite em hora
+  // LOCAL (não UTC) — seguro pra comparar com "hoje" (atraso, vencimento
+  // próximo etc.) sem o risco de new Date("YYYY-MM-DD") direto.
+  function parseDataSoLocal(dataStr){
+    const [ano, mes, dia] = String(dataStr).slice(0,10).split("-").map(Number);
+    return new Date(ano, mes - 1, dia);
+  }
 
   let db = loadDB();
   let settings = loadSettings();
@@ -3158,16 +3174,14 @@
     if(pago) return false;
     const hoje = new Date();
     hoje.setHours(0,0,0,0);
-    const venc = new Date(vencimento);
-    venc.setHours(0,0,0,0);
+    const venc = parseDataSoLocal(vencimento);
     return venc < hoje;
   }
 
   function proximaVencer(vencimento, diasAntecedencia = 7){
     const hoje = new Date();
     hoje.setHours(0,0,0,0);
-    const venc = new Date(vencimento);
-    venc.setHours(0,0,0,0);
+    const venc = parseDataSoLocal(vencimento);
     const diff = Math.ceil((venc - hoje) / (1000 * 60 * 60 * 24));
     return diff >= 0 && diff <= diasAntecedencia;
   }
@@ -3326,7 +3340,7 @@
           </td>
           <td>${escapeHtml(c.categoriaNome)}</td>
           <td class="right">${fmtBRL(c.valor)}</td>
-          <td>${new Date(c.proximoVencimento).toLocaleDateString("pt-BR")}</td>
+          <td>${fmtDataSo(c.proximoVencimento)}</td>
           <td><span class="pill" style="background:${statusColor};color:#fff">${statusText}</span></td>
           <td>${recText}</td>
           <td class="right">
@@ -3553,7 +3567,7 @@
           </td>
           <td>${c.clienteNome ? escapeHtml(c.clienteNome) : "-"}</td>
           <td class="right">${fmtBRL(c.valor)}</td>
-          <td>${new Date(c.proximoVencimento).toLocaleDateString("pt-BR")}</td>
+          <td>${fmtDataSo(c.proximoVencimento)}</td>
           <td><span class="pill" style="background:${statusColor};color:#fff">${statusText}</span></td>
           <td class="right">
             ${c.status === "ativo" ? `<button class="btn action success" onclick="receberConta('${c.id}')">✓ Receber</button>` : `<button class="btn action" onclick="cancelarPagamento('${c.id}', 'receber')" style="color:#f59e0b">↺ Reabrir</button>`}
@@ -3666,7 +3680,7 @@
 
       return `
         <tr>
-          <td>${new Date(c.proximoVencimento).toLocaleDateString("pt-BR")}</td>
+          <td>${fmtDataSo(c.proximoVencimento)}</td>
           <td>
             <div style="font-weight:500">${escapeHtml(c.descricao)}</div>
             ${c.obs ? `<div class="muted small">${escapeHtml(c.obs)}</div>` : ""}
@@ -3809,18 +3823,40 @@
   let chartCategorias = null;
   let chartEvolucao = null;
 
+  // Soma o líquido (já descontada a taxa do cartão) dos pagamentos de VENDA
+  // recebidos no mês — antes disso o Financeiro só enxergava dinheiro vindo
+  // de Contas a Receber, nunca da venda em si marcada como paga no Caixa/PDV.
+  // Compara a string da data direto ("YYYY-MM"), sem passar por new Date():
+  // paid_on vem sem hora/fuso do Postgres, e new Date("2026-08-01") é meia-noite
+  // UTC — num fuso atrás de UTC (como o do Brasil) isso "volta" pro dia 31 de
+  // julho ao ler de volta em hora local, fazendo pagamento do dia 1 sumir do mês.
+  function salesEntradasDoMes(mes, ano){
+    const alvo = `${ano}-${String(mes + 1).padStart(2, "0")}`; // "YYYY-MM"
+    let total = 0;
+    (db.sales || []).forEach(s => {
+      (s.payments || []).forEach(p => {
+        if((p.date || "").slice(0, 7) === alvo){
+          total += toNum(p.netValue);
+        }
+      });
+    });
+    return total;
+  }
+
   function renderDashboardFinanceiro(){
     const hoje = new Date();
     const mesAtual = hoje.getMonth();
     const anoAtual = hoje.getFullYear();
 
-    // Calcular movimentações do mês atual
+    // Calcular movimentações do mês atual — comparação por string (ver
+    // salesEntradasDoMes acima pro motivo de não usar new Date() aqui).
+    const alvoMesAno = `${anoAtual}-${String(mesAtual + 1).padStart(2, "0")}`;
     const movMes = db.movimentacoes.filter(m => {
-      const data = new Date(m.data);
-      return data.getMonth() === mesAtual && data.getFullYear() === anoAtual && m.pago;
+      return (m.data || "").slice(0, 7) === alvoMesAno && m.pago;
     });
 
-    const entradas = movMes.filter(m => m.tipo === "receber").reduce((sum, m) => sum + toNum(m.valor), 0);
+    const entradas = movMes.filter(m => m.tipo === "receber").reduce((sum, m) => sum + toNum(m.valor), 0)
+      + salesEntradasDoMes(mesAtual, anoAtual);
     const saidas = movMes.filter(m => m.tipo === "pagar").reduce((sum, m) => sum + toNum(m.valor), 0);
     const saldo = entradas - saidas;
 
@@ -3900,12 +3936,15 @@
       
       meses.push(`${mesNome}/${String(ano).slice(-2)}`);
       
+      const alvoMesAnoLoop = `${ano}-${String(mes + 1).padStart(2, "0")}`;
       const movDoMes = db.movimentacoes.filter(m => {
-        const dMov = new Date(m.data);
-        return dMov.getMonth() === mes && dMov.getFullYear() === ano && m.pago;
+        return (m.data || "").slice(0, 7) === alvoMesAnoLoop && m.pago;
       });
       
-      entradasMes.push(movDoMes.filter(m => m.tipo === "receber").reduce((s, m) => s + toNum(m.valor), 0));
+      entradasMes.push(
+        movDoMes.filter(m => m.tipo === "receber").reduce((s, m) => s + toNum(m.valor), 0)
+        + salesEntradasDoMes(mes, ano)
+      );
       saidasMes.push(movDoMes.filter(m => m.tipo === "pagar").reduce((s, m) => s + toNum(m.valor), 0));
     }
 
