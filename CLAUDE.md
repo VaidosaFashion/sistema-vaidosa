@@ -132,9 +132,20 @@ Auditoria completa (pontos fortes, todos os achados com evidência, diagrama ant
 - Testado de ponta a ponta: login com PIN certo passa (token válido aceito pelo Supabase), PIN errado é rejeitado e o widget reseta sozinho pra próxima tentativa gerar um token novo.
 
 **Ainda pendente (não bloqueia o uso, mas vale voltar):**
-- Migração dos dados históricos dos 3 aparelhos — o Kennedy sinalizou que pretende fazer um balanço físico e relançar tudo do zero quando confirmar que o sistema está bom, o que pode substituir essa migração inteira. Confirmar com ele antes de investir tempo nisso.
 - Teste físico da etiqueta numa impressora Zebra real (ver acima).
-- Step 5 do roteiro original: conector de marketplace Mercado Livre/TikTok Shop.
+- Step 5 do roteiro original: conector de marketplace Mercado Livre/TikTok Shop. Kennedy sinalizou interesse em integrar com **Nuvemshop** também (tem API pública, mesmo tipo de trabalho — sincronizar estoque, receber pedido automaticamente). Ele também tem um site antigo na **Loja Integrada** parado há 2+ anos — avaliado como baixa prioridade (provavelmente mais trabalho ressuscitar do que começar limpo), não iniciar sem ele pedir especificamente.
+- **Ajuste de layout sinalizado pelo Kennedy (2026-08-05, baixa prioridade — ele mesmo disse "pode deixar"):** telas em viewport estreito (ex: painel lateral do navegador) cortam conteúdo — precisa rolar horizontalmente na tabela de Produtos/Estoque, e os campos "Cliente não informado"/"Vendedor não informado" no Caixa/PDV ficam espremidos. Provavelmente falta `min-width`/`overflow-x:auto` em algum container ou os cards do grid não têm `flex-wrap`/breakpoint responsivo. Não mexer até ele pedir.
+
+## Importação de dados históricos (2026-08-05)
+
+**Feita com sucesso.** Kennedy confirmou que, ao contrário do que a auditoria original assumiu, o sistema sempre rodou **num computador só** (não 3 aparelhos separados) — então não havia risco de conflito entre cópias divergentes do mesmo dado.
+
+- Kennedy recuperou o backup antigo (localStorage, chave `vaidosa_lite_v4`) direto do navegador de uso diário via script no console (`localStorage.getItem` + download manual, já que o botão "Baixar backup" do app novo agora exporta do Supabase, não do localStorage antigo) e mandou o arquivo (`vaidosa_backup_2026-08-05.json`, 179 produtos / 37 clientes / 73 vendas / 751 stock moves / 13 contas / 1 movimentação / 14 categorias).
+- **Decisão de escopo**: importar só **clientes, vendas (+ itens + pagamentos), contas e movimentações**. Produtos e stockMoves ficaram de fora de propósito — Kennedy vai recadastrar produtos do zero (grade de tamanho bagunçada nos dados antigos, motivo original da reforma).
+- Import rodado uma vez, direto pelo navegador (sessão autenticada do próprio app, mesma RLS "authenticated full access" de qualquer usuário), sem script/CLI — arquivo do backup foi copiado temporariamente pra dentro do repo (`_import_data_temp.json`, servido pelo `serve` local) só pra conseguir dar `fetch()` nele a partir da página, e apagado logo depois (nunca commitado).
+- **Mapeamentos feitos**: vendedores (Tatiane/Cristiane) casados por nome com os já existentes, sem duplicar. 3 categorias novas inseridas (as que não bateram com as 11 padrão: "Sálario Vendedora", "Odonto - Sáude", "Consórcio"). `sale_items.product_id` ficou `null` em todos os itens importados (produto antigo não existe mais no banco novo) — o snapshot de nome/preço/custo/tamanho/barcode em cada item preserva o histórico mesmo assim. 1 pagamento antigo sem `method` preenchido (só tinha nota "cartao 6x") foi inferido como `Credito`.
+- **Resultado confirmado**: 73 vendas, 490 itens, 73 pagamentos, 37 clientes, 13 contas, 1 movimentação — zero erros. Total bruto histórico R$63.020, líquido R$61.809,35, lucro R$13.313,85. `payment_status` de cada venda foi recalculado automaticamente pelo trigger `recalc_sale_totals` ao inserir os pagamentos (71 "Pago", 2 "Aberto"), não copiado do dado antigo (que estava desatualizado no export — todas as 73 vendas apareciam como "Aberto" lá).
+- Sem script reaproveitável guardado no repo — foi um import único, feito ad-hoc no console do navegador. Se precisar importar de novo (outro backup, outro pedaço), reconstruir a lógica a partir desta seção do CLAUDE.md.
 
 ## Campos fiscais no cadastro de Produtos (2026-08-04)
 
