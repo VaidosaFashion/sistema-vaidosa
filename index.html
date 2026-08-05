@@ -5006,6 +5006,27 @@
     const s = db.sales.find(x=>x.id===saleId);
     if(!s) return toast("Não encontrado","Venda não existe.");
 
+    // Trava contra apagar uma venda que já tem NFC-e AUTORIZADA de verdade —
+    // nfce_emissions tem "on delete cascade" pro caso comum (tentativas de
+    // teste/erro presas numa venda que precisa ser corrigida), mas uma nota
+    // já autorizada é um documento fiscal real: o cliente pode pedir a
+    // segunda via depois, e apagar a venda destruiria esse registro sem
+    // nenhum cancelamento de verdade na SEFAZ. Bloqueia aqui, antes de
+    // qualquer coisa — cancelamento de NFC-e é um recurso futuro (fora do
+    // escopo do v1, ver CLAUDE.md).
+    const { data: emissaoAutorizada } = await sb
+      .from("nfce_emissions")
+      .select("numero, chave_acesso")
+      .eq("sale_id", saleId)
+      .eq("status", "authorized")
+      .maybeSingle();
+    if(emissaoAutorizada){
+      return toast(
+        "Não pode excluir",
+        `Essa venda tem NFC-e autorizada (nº ${emissaoAutorizada.numero}) — excluir apagaria o registro fiscal. Se precisar mesmo desfazer, isso exige cancelamento formal na SEFAZ, ainda não implementado no sistema.`
+      );
+    }
+
     for(const it of s.items){
       const p = db.products.find(x=>x.id===it.productId);
       if(p){
