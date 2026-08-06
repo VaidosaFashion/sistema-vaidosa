@@ -699,8 +699,8 @@
       </div>
       <div class="row cols2">
         <div>
-          <label>SKU interno (opcional)</label>
-          <input id="p_sku" placeholder="Ex: CALCA-001-G3" />
+          <label>SKU interno (sugerido automaticamente, pode editar)</label>
+          <input id="p_sku" placeholder="Ex: VF-CALC-001" />
         </div>
         <div></div>
       </div>
@@ -2119,12 +2119,23 @@
 
   // Versão curta e sem acento do nome da cor, pra encaixar no SKU auto-gerado
   // (ex: "Azul Marinho" -> "AZULMA").
+  function asciiUpper(s){
+    return String(s||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toUpperCase();
+  }
   function colorSlug(nome){
-    return String(nome||"")
-      .normalize("NFD").replace(/[\u0300-\u036f]/g,"")
-      .toUpperCase()
-      .replace(/[^A-Z0-9]+/g,"")
-      .slice(0,6);
+    return asciiUpper(nome).replace(/[^A-Z0-9]+/g,"").slice(0,6);
+  }
+  // Sugestao de SKU a partir do nome do produto, pedido do Kennedy: ele ja
+  // usava manualmente esse padrao ("VF-CROP-JAS" pra "Cropped Jasmim",
+  // "VF-CHEM-GIR" pra "Chemise Girassol", 1a palavra com 4 letras, 2a com
+  // 3), e queria que o sistema gerasse sozinho, igual ja faz com cor e
+  // tamanho no SKU final. Continua editavel, e so uma sugestao preenchida
+  // automaticamente, nao trava o campo.
+  function modelSlug(name){
+    const words = asciiUpper(name).replace(/[^A-Z0-9\s]+/g,"").trim().split(/\s+/).filter(Boolean);
+    if(!words.length) return "";
+    if(words.length === 1) return "VF-" + words[0].slice(0,6);
+    return "VF-" + words[0].slice(0,4) + "-" + words[1].slice(0,3);
   }
   // Formata uma data-SÓ (sem hora, tipo "2026-08-01" vindo de um campo `date`
   // do Postgres) direto pela string — não usar new Date("2026-08-01") pra
@@ -2812,11 +2823,27 @@
       outroField.value = "";
     }
   });
-  
+
+  // Sugere o SKU a partir do nome assim que sai do campo (blur) -- so
+  // preenche se o SKU ainda estiver vazio, pra nao sobrescrever algo que o
+  // Kennedy ja digitou manualmente.
+  document.getElementById("p_name").addEventListener("blur", ()=>{
+    const skuField = document.getElementById("p_sku");
+    if(skuField.value.trim() === ""){
+      skuField.value = modelSlug(document.getElementById("p_name").value);
+    }
+  });
+
   document.getElementById("btnAddProduct").addEventListener("click", async ()=>{
     const name = document.getElementById("p_name").value.trim();
     if(!name) return toast("Faltou nome","Preencha o nome do produto.");
 
+    // Reforco (o blur do nome ja preenche isso na maioria dos casos, mas
+    // um valor preenchido via clone/programaticamente nao dispara blur) --
+    // se ainda estiver vazio nesse ponto, gera a sugestao agora mesmo.
+    if(document.getElementById("p_sku").value.trim() === ""){
+      document.getElementById("p_sku").value = modelSlug(name);
+    }
     const baseSku = document.getElementById("p_sku").value.trim();
 
     // Pegar categoria (do select ou do campo "outro")
@@ -3070,10 +3097,15 @@
       document.getElementById("p_fabric_outro").style.display = "block";
     }
 
-    // SKU e Cor ficam em branco de propósito: o SKU antigo já vem com a
-    // cor/tamanho velhos embutidos (não faz sentido herdar), e cor é
-    // exatamente o que ele vai trocar. Estoque por grade também fica
-    // zerado — quantidade é sempre nova a cada cor.
+    // SKU: nao herda o valor antigo (ja vem com a cor/tamanho velhos
+    // embutidos), mas gera uma sugestao nova a partir do nome -- mesma
+    // logica do blur em p_name, so que aqui precisa ser explicito porque
+    // setar p_name.value via JS nao dispara o evento blur sozinho.
+    document.getElementById("p_sku").value = modelSlug(p.name || "");
+
+    // Cor fica em branco de proposito: e exatamente o que ele vai trocar.
+    // Estoque por grade tambem fica zerado -- quantidade e sempre nova a
+    // cada cor.
 
     toast("Produto clonado", `Dados de "${p.name}" carregados. Escolha a cor nova e as quantidades, depois clique em "Gerar códigos e salvar".`);
     document.querySelector("#tab-produtos").scrollIntoView({ behavior: "smooth" });
