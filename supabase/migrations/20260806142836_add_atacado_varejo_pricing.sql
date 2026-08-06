@@ -15,10 +15,22 @@
 -- Catálogo de produtos está vazio em produção neste momento (Kennedy está
 -- recadastrando do zero, ver CLAUDE.md) — não há necessidade de backfill.
 
-alter table public.products rename column price to price_atacado;
+-- Todo o bloco é seguro pra rodar mais de uma vez (idempotente) — caso a
+-- primeira tentativa tenha falhado no meio (ver nota sobre create_sale na
+-- outra migração) e precise ser reexecutado do zero.
+do $$
+begin
+  if exists (select 1 from information_schema.columns
+             where table_schema='public' and table_name='products' and column_name='price')
+     and not exists (select 1 from information_schema.columns
+             where table_schema='public' and table_name='products' and column_name='price_atacado')
+  then
+    alter table public.products rename column price to price_atacado;
+  end if;
+end $$;
 
 alter table public.products
-  add column price_varejo numeric(10,2) not null default 0 check (price_varejo >= 0);
+  add column if not exists price_varejo numeric(10,2) not null default 0 check (price_varejo >= 0);
 
 alter table public.products alter column price_varejo drop default;
 
@@ -28,4 +40,4 @@ alter table public.products alter column price_varejo drop default;
 -- preserva o comportamento histórico pra qualquer chamada antiga do RPC
 -- que ainda não mande esse parâmetro.
 alter table public.sales
-  add column price_tier text not null default 'Atacado' check (price_tier in ('Atacado','Varejo'));
+  add column if not exists price_tier text not null default 'Atacado' check (price_tier in ('Atacado','Varejo'));

@@ -3,6 +3,17 @@
 -- do PRODUTO no servidor (v_product.price), não do que o carrinho no
 -- frontend mostra — então sem essa mudança toda venda continuaria cobrando
 -- o preço atacado, mesmo com "Varejo" selecionado na tela.
+--
+-- O novo parâmetro p_price_tier muda a assinatura da função (10 argumentos
+-- pra 11) — "create or replace" só substitui no lugar quando a assinatura
+-- é IDÊNTICA à existente; como mudou, ele criava uma SEGUNDA função com o
+-- mesmo nome (overload) em vez de substituir, e o "grant" no fim do
+-- arquivo falhava com "function name is not unique" por causa disso. Dropar
+-- a versão antiga primeiro evita a ambiguidade.
+drop function if exists public.create_sale(
+  uuid, uuid, uuid, text, text, text, smallint, numeric, text, jsonb
+);
+
 create or replace function public.create_sale(
   p_client_request_id uuid,
   p_client_id      uuid,
@@ -80,4 +91,6 @@ exception
 end;
 $$;
 
-grant execute on function public.create_sale to authenticated;
+grant execute on function public.create_sale(
+  uuid, uuid, uuid, text, text, text, smallint, numeric, text, jsonb, text
+) to authenticated;
