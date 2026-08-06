@@ -727,14 +727,18 @@
         </div>
       </div>
 
-      <div class="row cols2">
+      <div class="row cols3">
         <div>
           <label>Preço de custo (R$)</label>
           <input id="p_cost" type="number" step="0.01" placeholder="0,00" />
         </div>
         <div>
-          <label>Preço de venda (R$)</label>
-          <input id="p_price" type="number" step="0.01" placeholder="0,00" />
+          <label>Preço Atacado (R$)</label>
+          <input id="p_price_atacado" type="number" step="0.01" placeholder="0,00" />
+        </div>
+        <div>
+          <label>Preço Varejo (R$)</label>
+          <input id="p_price_varejo" type="number" step="0.01" placeholder="0,00" />
         </div>
       </div>
 
@@ -870,17 +874,18 @@
       </div>
       <div class="sep"></div>
       <div style="overflow-x:auto;max-height:540px">
-        <table style="width:100%;min-width:1090px">
+        <table style="width:100%;min-width:1160px">
           <thead>
             <tr>
               <th style="width:8%">Barcode</th>
-              <th style="width:30%">Produto</th>
-              <th style="width:15%">Categoria</th>
-              <th style="width:13%">Tecido</th>
+              <th style="width:26%">Produto</th>
+              <th style="width:13%">Categoria</th>
+              <th style="width:11%">Tecido</th>
               <th style="width:5%">Grade</th>
-              <th class="right" style="width:7%">Estoque</th>
-              <th class="right" style="width:8%">Venda</th>
-              <th class="right" style="width:8%">Custo</th>
+              <th class="right" style="width:6%">Estoque</th>
+              <th class="right" style="width:7%">Atacado</th>
+              <th class="right" style="width:7%">Varejo</th>
+              <th class="right" style="width:7%">Custo</th>
               <th style="width:6%"></th>
             </tr>
           </thead>
@@ -1046,7 +1051,7 @@
         </div>
       </div>
 
-      <div class="row cols2" style="margin-top:10px">
+      <div class="row cols3" style="margin-top:10px">
         <div>
           <label>Tipo</label>
           <select id="sale_kind">
@@ -1063,6 +1068,14 @@
             <option value="CartaoAVista">Cartão (à vista)</option>
             <option value="CartaoParcelado">Cartão (parcelado 2x a 6x)</option>
             <option value="Misto">Misto</option>
+          </select>
+        </div>
+
+        <div>
+          <label>Tabela de preço</label>
+          <select id="sale_price_tier">
+            <option value="Atacado">Atacado</option>
+            <option value="Varejo">Varejo</option>
           </select>
         </div>
       </div>
@@ -1615,7 +1628,7 @@
     <div style="max-height:320px;overflow:auto">
       <table>
         <thead>
-          <tr><th>Produto</th><th>Barcode</th><th>Grade</th><th class="right">Estoque</th><th class="right">Preço</th><th></th></tr>
+          <tr><th>Produto</th><th>Barcode</th><th>Grade</th><th class="right">Estoque</th><th class="right">Atacado</th><th class="right">Varejo</th><th></th></tr>
         </thead>
         <tbody id="manualProductTable"></tbody>
       </table>
@@ -2116,7 +2129,10 @@
       toast("Erro ao carregar produtos", error.message);
       return;
     }
-    db.products = data;
+    // price_atacado/price_varejo são snake_case no banco (nomes compostos,
+    // diferente do resto das colunas de products que coincidem 1:1) —
+    // mapeadas aqui pro camelCase que o resto do app usa.
+    db.products = data.map(p => ({ ...p, priceAtacado: p.price_atacado, priceVarejo: p.price_varejo }));
   }
 
   /* =========================
@@ -2185,6 +2201,7 @@
       profit: row.profit,
       note: row.note,
       paymentStatus: row.payment_status,
+      priceTier: row.price_tier,
       items: (row.sale_items||[]).map(it=>({
         productId: it.product_id, name: it.name, cat: it.cat, fabric: it.fabric,
         size: it.size, price: it.price, cost: it.cost, qty: it.qty, barcode: it.barcode
@@ -2678,7 +2695,11 @@
     if(cat === "outro") cat = document.getElementById("p_cat_outro").value.trim();
 
     const cost = Math.max(0, toNum(document.getElementById("p_cost").value));
-    const price = Math.max(0, toNum(document.getElementById("p_price").value));
+    const priceAtacado = Math.max(0, toNum(document.getElementById("p_price_atacado").value));
+    if(document.getElementById("p_price_varejo").value.trim() === ""){
+      return toast("Faltou preço varejo","Preencha o preço varejo (obrigatório).");
+    }
+    const priceVarejo = Math.max(0, toNum(document.getElementById("p_price_varejo").value));
     const note = document.getElementById("p_note").value.trim();
 
     // Pegar tecido (do select ou do campo "outro")
@@ -2706,7 +2727,8 @@
       const newStock = Math.max(0, Math.floor(toNum(document.getElementById(`p_stock_${p.size.toLowerCase()}`).value)));
       const patch = {
         sku: baseSku ? `${baseSku}-${p.size}` : p.sku,
-        name, cat, fabric, cost, price, note,
+        name, cat, fabric, cost, note,
+        price_atacado: priceAtacado, price_varejo: priceVarejo,
         stock: newStock,
         ncm: ncm || null, cfop: cfop || null, cest: cest || null,
         csosn: csosn || null, origem, unidade
@@ -2739,7 +2761,8 @@
     // (product_barcode_seq), substituindo o contador por dispositivo.
     const rows = Object.entries(grades).map(([size, stock])=>({
       sku: baseSku ? `${baseSku}-${size}` : "",
-      name, cat, fabric, size, cost, price, stock, note,
+      name, cat, fabric, size, cost, stock, note,
+      price_atacado: priceAtacado, price_varejo: priceVarejo,
       ncm: ncm || null, cfop: cfop || null, cest: cest || null,
       csosn: csosn || null, origem, unidade
     }));
@@ -2757,7 +2780,7 @@
 
   document.getElementById("btnClearProduct").addEventListener("click", clearProductForm);
   function clearProductForm(){
-    ["p_sku","p_name","p_note","p_cost","p_price","p_ncm","p_cest"].forEach(id=>document.getElementById(id).value="");
+    ["p_sku","p_name","p_note","p_cost","p_price_atacado","p_price_varejo","p_ncm","p_cest"].forEach(id=>document.getElementById(id).value="");
     ["p_stock_g1","p_stock_g2","p_stock_g3","p_stock_g4","p_stock_g5"].forEach(id=>document.getElementById(id).value="0");
     document.getElementById("p_cfop").value = "5102";
     document.getElementById("p_csosn").value = "102";
@@ -2791,7 +2814,8 @@
     document.getElementById("p_sku").value = p.sku || "";
     document.getElementById("p_name").value = p.name || "";
     document.getElementById("p_cost").value = p.cost || "";
-    document.getElementById("p_price").value = p.price || "";
+    document.getElementById("p_price_atacado").value = p.priceAtacado || "";
+    document.getElementById("p_price_varejo").value = p.priceVarejo ?? "";
     document.getElementById("p_note").value = p.note || "";
     document.getElementById("p_ncm").value = p.ncm || "";
     document.getElementById("p_cfop").value = p.cfop || "5102";
@@ -2912,9 +2936,10 @@
           <td style="width:15%">${catSelect}</td>
           <td style="width:13%">${fabricSelect}</td>
           <td style="width:5%;text-align:center">${escapeHtml(p.size||"")}</td>
-          <td class="right" style="width:7%">${toNum(p.stock)}</td>
-          <td class="right" style="width:8%">${fmtBRL(p.price)}</td>
-          <td class="right" style="width:8%">${fmtBRL(p.cost)}</td>
+          <td class="right" style="width:6%">${toNum(p.stock)}</td>
+          <td class="right" style="width:7%">${fmtBRL(p.priceAtacado)}</td>
+          <td class="right" style="width:7%">${fmtBRL(p.priceVarejo)}</td>
+          <td class="right" style="width:7%">${fmtBRL(p.cost)}</td>
           <td class="right" style="width:6%"><button class="btn small" data-select="${escapeHtml(p.id)}">Selecionar</button></td>
         </tr>
       `;
@@ -4176,7 +4201,7 @@
       const p = matches[0];
       box.innerHTML = `<b>${escapeHtml(p.name)}</b> (${escapeHtml(p.size)})` +
         `<br><span class="muted small">${escapeHtml(p.cat||"")}${p.fabric?(" | "+escapeHtml(p.fabric)):""}</span>` +
-        `<br><span class="muted small">Estoque: ${toNum(p.stock)} | Venda: ${fmtBRL(p.price)} | Custo: ${fmtBRL(p.cost)}</span>`;
+        `<br><span class="muted small">Estoque: ${toNum(p.stock)} | Atacado: ${fmtBRL(p.priceAtacado)} | Varejo: ${fmtBRL(p.priceVarejo)} | Custo: ${fmtBRL(p.cost)}</span>`;
     } else {
       box.innerHTML = `<b>Múltiplos produtos com esse barcode:</b><br>` + matches.map(p=>`${p.name} (${p.size})`).join(", ");
     }
@@ -4379,7 +4404,7 @@
       g.sizes[sz] += st;
 
       const c = toNum(p.cost);
-      const pr = toNum(p.price);
+      const pr = toNum(p.priceAtacado); // relatório de estoque usa atacado como referência
       if(g.costMin === null){ g.costMin = c; g.costMax = c; }
       else { g.costMin = Math.min(g.costMin, c); g.costMax = Math.max(g.costMax, c); }
       if(g.priceMin === null){ g.priceMin = pr; g.priceMax = pr; }
@@ -4612,7 +4637,8 @@
           <td class="small">${escapeHtml(p.barcode)}</td>
           <td>${escapeHtml(p.size||"")}</td>
           <td class="right">${toNum(p.stock)}</td>
-          <td class="right">${fmtBRL(p.price)}</td>
+          <td class="right">${fmtBRL(p.priceAtacado)}</td>
+          <td class="right">${fmtBRL(p.priceVarejo)}</td>
           <td class="right"><button class="btn ok small" data-add="${escapeHtml(p.id)}">Adicionar</button></td>
         </tr>
       `;
@@ -4629,6 +4655,24 @@
     });
   }
 
+  // Tabela de preço é escolhida uma vez pra venda inteira (não por item) —
+  // ver CLAUDE.md. Trocar o select reprecifica os itens já no carrinho.
+  function currentPriceTier(){
+    return document.getElementById("sale_price_tier")?.value || "Atacado";
+  }
+  function priceForTier(p, tier){
+    return tier === "Varejo" ? toNum(p.priceVarejo) : toNum(p.priceAtacado);
+  }
+
+  document.getElementById("sale_price_tier").addEventListener("change", ()=>{
+    const tier = currentPriceTier();
+    currentSale.items.forEach(it=>{
+      const p = db.products.find(x=>x.id===it.productId);
+      if(p) it.price = priceForTier(p, tier);
+    });
+    renderSale();
+  });
+
   function addProductToSale(p){
     if(toNum(p.stock)<=0) return toast("Sem estoque",`${p.name} está zerado.`);
 
@@ -4637,7 +4681,7 @@
       if(existing.qty + 1 > toNum(p.stock)) return toast("Estoque insuficiente","Já bateu o limite deste item.");
       existing.qty += 1;
     }else{
-      currentSale.items.push({ productId:p.id, name:p.name, cat:(p.cat||""), fabric:(p.fabric||""), size:p.size, price:toNum(p.price), cost:toNum(p.cost), qty:1, barcode:p.barcode });
+      currentSale.items.push({ productId:p.id, name:p.name, cat:(p.cat||""), fabric:(p.fabric||""), size:p.size, price:priceForTier(p, currentPriceTier()), cost:toNum(p.cost), qty:1, barcode:p.barcode });
     }
     renderSale();
     toast("Adicionado", `${p.name} (${p.size})`);
@@ -4777,7 +4821,8 @@
       p_installments: pay === "CartaoParcelado" ? Number(inst) : 0,
       p_discount: totals.disc,
       p_note: note,
-      p_items: currentSale.items.map(it=>({ product_id: it.productId, qty: it.qty }))
+      p_items: currentSale.items.map(it=>({ product_id: it.productId, qty: it.qty })),
+      p_price_tier: currentPriceTier()
     });
 
     btn.disabled = false;
@@ -4814,6 +4859,7 @@
       document.getElementById("sale_channel").value = "Loja";
       document.getElementById("sale_kind").value = "Venda";
       document.getElementById("sale_pay").value = "PIX";
+      document.getElementById("sale_price_tier").value = "Atacado";
       document.getElementById("sale_discount").value = "0";
       document.getElementById("sale_note").value = "";
       document.getElementById("overrideTroca").checked = false;
@@ -4833,6 +4879,7 @@
     document.getElementById("sale_pay").value = "PIX";
     document.getElementById("sale_channel").value = "Loja";
     document.getElementById("sale_kind").value = "Venda";
+    document.getElementById("sale_price_tier").value = "Atacado";
     document.getElementById("sale_discount").value = "0";
     document.getElementById("sale_note").value = "";
     document.getElementById("overrideTroca").checked = false;
@@ -4952,7 +4999,7 @@
         <tr>
           <td class="small">${new Date(s.date).toLocaleString("pt-BR")}</td>
           <td>${escapeHtml(c?.name||"Cliente não informado")}</td>
-          <td>${escapeHtml(s.channel||"Loja")}</td>
+          <td>${escapeHtml(s.channel||"Loja")} <span class="muted small">(${escapeHtml(s.priceTier||"Atacado")})</span></td>
           <td class="${statusClass}">${escapeHtml(status)}</td>
           <td class="right">${fmtBRL(s.totalBruto)}</td>
           <td class="right">${fmtBRL(totalPago)}</td>
