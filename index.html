@@ -3025,6 +3025,60 @@
     document.querySelector("#tab-produtos").scrollIntoView({ behavior: "smooth" });
   });
 
+  // "Clonar" — pedido do Kennedy: cadastrar o mesmo produto em várias cores
+  // hoje é um lote por cor (um clique de "Gerar códigos e salvar" = uma
+  // cor), e cada lote novo limpa o formulário inteiro. Clonar carrega tudo
+  // de novo (nome/categoria/tecido/preços/dados fiscais) MENOS cor e
+  // estoque por grade — ele só troca a cor e digita a quantidade de cada
+  // tamanho, sem redigitar o resto. Diferente de "Editar": aqui fica em
+  // modo CRIAÇÃO (editingProductId continua null), então gera produtos
+  // novos em vez de sobrescrever o produto clonado.
+  function cloneProductToForm(p){
+    clearProductForm(); // garante estado limpo de criação, botão certo etc.
+
+    document.getElementById("p_name").value = p.name || "";
+    document.getElementById("p_cost").value = p.cost || "";
+    document.getElementById("p_price_atacado").value = p.priceAtacado || "";
+    document.getElementById("p_price_varejo").value = p.priceVarejo ?? "";
+    document.getElementById("p_note").value = p.note || "";
+    document.getElementById("p_ncm").value = p.ncm || "";
+    document.getElementById("p_cfop").value = p.cfop || "5102";
+    document.getElementById("p_cest").value = p.cest || "";
+    document.getElementById("p_csosn").value = p.csosn || "102";
+    document.getElementById("p_unidade").value = p.unidade || "UN";
+    document.getElementById("p_origem").value = p.origem || "0";
+
+    // Categoria: verificar se existe no select ou usar "outro"
+    const catSelect = document.getElementById("p_cat");
+    const catOptions = Array.from(catSelect.options).map(opt => opt.value);
+    if(catOptions.includes(p.cat)){
+      catSelect.value = p.cat;
+    } else if(p.cat){
+      catSelect.value = "outro";
+      document.getElementById("p_cat_outro").value = p.cat;
+      document.getElementById("p_cat_outro").style.display = "block";
+    }
+
+    // Tecido: idem
+    const fabricSelect = document.getElementById("p_fabric");
+    const fabricOptions = Array.from(fabricSelect.options).map(opt => opt.value);
+    if(fabricOptions.includes(p.fabric)){
+      fabricSelect.value = p.fabric;
+    } else if(p.fabric){
+      fabricSelect.value = "outro";
+      document.getElementById("p_fabric_outro").value = p.fabric;
+      document.getElementById("p_fabric_outro").style.display = "block";
+    }
+
+    // SKU e Cor ficam em branco de propósito: o SKU antigo já vem com a
+    // cor/tamanho velhos embutidos (não faz sentido herdar), e cor é
+    // exatamente o que ele vai trocar. Estoque por grade também fica
+    // zerado — quantidade é sempre nova a cada cor.
+
+    toast("Produto clonado", `Dados de "${p.name}" carregados. Escolha a cor nova e as quantidades, depois clique em "Gerar códigos e salvar".`);
+    document.querySelector("#tab-produtos").scrollIntoView({ behavior: "smooth" });
+  }
+
   document.getElementById("btnDeleteProduct").addEventListener("click", async ()=>{
     if(!selectedProductId) return;
     const p = db.products.find(x=>x.id===selectedProductId);
@@ -3109,7 +3163,12 @@
           <td class="right" style="width:7%">${fmtBRL(p.priceAtacado)}</td>
           <td class="right" style="width:7%">${fmtBRL(p.priceVarejo)}</td>
           <td class="right" style="width:7%">${fmtBRL(p.cost)}</td>
-          <td class="right" style="width:6%"><button class="btn small" data-select="${escapeHtml(p.id)}">Selecionar</button></td>
+          <td class="right" style="width:8%">
+            <div style="display:flex;flex-direction:column;gap:4px;align-items:flex-end">
+              <button class="btn small" data-select="${escapeHtml(p.id)}">Selecionar</button>
+              <button class="btn small" data-clone="${escapeHtml(p.id)}" title="Cria um produto novo com os mesmos dados, pra só trocar cor e quantidade">Clonar</button>
+            </div>
+          </td>
         </tr>
       `;
     }).join("");
@@ -3122,6 +3181,13 @@
         const p = db.products.find(x=>x.id===selectedProductId);
         document.getElementById("selectedProductPill").textContent = p ? `Selecionado: ${p.name} (${p.size})` : "Nenhum selecionado";
         renderProducts();
+      });
+    });
+
+    tb.querySelectorAll("button[data-clone]").forEach(b=>{
+      b.addEventListener("click", ()=>{
+        const p = db.products.find(x=>x.id===b.dataset.clone);
+        if(p) cloneProductToForm(p);
       });
     });
 
