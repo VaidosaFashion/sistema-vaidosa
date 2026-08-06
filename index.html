@@ -616,6 +616,7 @@
               <th>Modelo</th>
               <th>Categoria</th>
               <th>Tecido</th>
+              <th>Cor</th>
               <th class="right">G1</th>
               <th class="right">G2</th>
               <th class="right">G3</th>
@@ -704,7 +705,7 @@
         <div></div>
       </div>
 
-      <div class="row cols2">
+      <div class="row cols3">
         <div>
           <label>Nome do produto</label>
           <input id="p_name" placeholder="Ex: Calça Jeans" />
@@ -724,6 +725,21 @@
             <option value="outro">Outro (digitar)</option>
           </select>
           <input id="p_cat_outro" placeholder="Digite categoria..." style="display:none;margin-top:8px" />
+        </div>
+        <div>
+          <label>Cor</label>
+          <select id="p_cor">
+            <option value="">Selecione...</option>
+            <option value="__NOVA__">+ Cadastrar nova cor</option>
+          </select>
+          <input id="p_cor_nova" placeholder="Digite o nome da cor..." style="display:none;margin-top:8px" />
+        </div>
+      </div>
+
+      <div class="row" id="colorManageRow" style="margin-top:8px">
+        <div>
+          <div class="muted small" style="margin-bottom:6px">Cores cadastradas (clique no × pra remover uma cor que não está mais em uso):</div>
+          <div id="colorChipsList" class="muted small">Nenhuma cor cadastrada ainda.</div>
         </div>
       </div>
 
@@ -761,7 +777,7 @@
         </div>
         <div>
           <label>Observação (opcional)</label>
-          <input id="p_note" placeholder="Ex: cor, detalhe..." />
+          <input id="p_note" placeholder="Ex: estampa, detalhe..." />
         </div>
       </div>
 
@@ -874,13 +890,14 @@
       </div>
       <div class="sep"></div>
       <div style="overflow-x:auto;max-height:540px">
-        <table style="width:100%;min-width:1160px">
+        <table style="width:100%;min-width:1280px">
           <thead>
             <tr>
               <th style="width:8%">Barcode</th>
-              <th style="width:26%">Produto</th>
-              <th style="width:13%">Categoria</th>
-              <th style="width:11%">Tecido</th>
+              <th style="width:22%">Produto</th>
+              <th style="width:11%">Categoria</th>
+              <th style="width:10%">Tecido</th>
+              <th style="width:10%">Cor</th>
               <th style="width:5%">Grade</th>
               <th class="right" style="width:6%">Estoque</th>
               <th class="right" style="width:7%">Atacado</th>
@@ -2013,11 +2030,12 @@
   function loadDB(){
     const raw = localStorage.getItem(KEY);
     if(!raw){
-      const db = { 
-        products:[], 
-        clients:[], 
-        vendedores:[], 
-        sales:[], 
+      const db = {
+        products:[],
+        clients:[],
+        vendedores:[],
+        colors:[],
+        sales:[],
         stockMoves:[],
         // MÓDULO FINANCEIRO
         contas:[], // contas a pagar/receber (com recorrência)
@@ -2030,6 +2048,7 @@
     try{ 
       const parsed = JSON.parse(raw);
       if(!parsed.vendedores) parsed.vendedores = [];
+      if(!parsed.colors) parsed.colors = [];
       // Adicionar estruturas financeiras se não existirem
       if(!parsed.contas) parsed.contas = [];
       if(!parsed.movimentacoes) parsed.movimentacoes = [];
@@ -2097,6 +2116,16 @@
     return v.toLocaleString("pt-BR",{style:"currency",currency:"BRL"});
   }
   function escapeHtml(s){ return String(s??"").replace(/[&<>"']/g,m=>({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;" }[m])); }
+
+  // Versão curta e sem acento do nome da cor, pra encaixar no SKU auto-gerado
+  // (ex: "Azul Marinho" -> "AZULMA").
+  function colorSlug(nome){
+    return String(nome||"")
+      .normalize("NFD").replace(/[\u0300-\u036f]/g,"")
+      .toUpperCase()
+      .replace(/[^A-Z0-9]+/g,"")
+      .slice(0,6);
+  }
   // Formata uma data-SÓ (sem hora, tipo "2026-08-01" vindo de um campo `date`
   // do Postgres) direto pela string — não usar new Date("2026-08-01") pra
   // isso: é interpretado como meia-noite UTC, e num fuso atrás de UTC (como o
@@ -2124,16 +2153,116 @@
      db.products normalmente — só a carga inicial e as mutações mudam.
   ========================= */
   async function loadProductsFromSupabase(){
-    const { data, error } = await sb.from("products").select("*").order("created_at", { ascending:false });
+    // embed de colors(nome) pelo color_id — mesmo padrão de sale_items(*)
+    // em loadSalesFromSupabase, só que aqui é um embed pra FK simples, não
+    // pra tabela filha.
+    const { data, error } = await sb.from("products").select("*, colors(nome)").order("created_at", { ascending:false });
     if(error){
       toast("Erro ao carregar produtos", error.message);
       return;
     }
-    // price_atacado/price_varejo são snake_case no banco (nomes compostos,
-    // diferente do resto das colunas de products que coincidem 1:1) —
-    // mapeadas aqui pro camelCase que o resto do app usa.
-    db.products = data.map(p => ({ ...p, priceAtacado: p.price_atacado, priceVarejo: p.price_varejo }));
+    // price_atacado/price_varejo/color_id são snake_case ou precisam de
+    // achatamento do embed — mapeados aqui pro camelCase que o resto do
+    // app usa (o resto das colunas de products coincide 1:1, por isso não
+    // precisou de mapeamento até agora).
+    db.products = data.map(p => ({
+      ...p, priceAtacado: p.price_atacado, priceVarejo: p.price_varejo,
+      colorId: p.color_id, colorName: p.colors?.nome || ""
+    }));
   }
+
+  /* =========================
+     CORES — Supabase
+     Cadastro simples reaproveitável (evita "Preto" x "preto " digitado
+     diferente em cada produto) — pedido direto do Kennedy depois que ele
+     tentou emular cor via SKU manual e não funcionou (SKU não é usado pra
+     identificar/filtrar nada, é só um rótulo opcional).
+  ========================= */
+  async function loadColorsFromSupabase(){
+    const { data, error } = await sb.from("colors").select("*").order("nome");
+    if(error){
+      toast("Erro ao carregar cores", error.message);
+      return;
+    }
+    db.colors = data;
+  }
+
+  // Acha a cor por nome (sem diferenciar maiúscula/espaço) ou cria se não
+  // existir — usado tanto pelo "+ Cadastrar nova cor" do formulário quanto
+  // pela edição inline na tabela de busca.
+  async function resolveOrCreateColor(nomeRaw){
+    const nome = (nomeRaw || "").trim();
+    if(!nome) return null;
+
+    const existing = db.colors.find(c => c.nome.trim().toLowerCase() === nome.toLowerCase());
+    if(existing) return existing.id;
+
+    const { data, error } = await sb.from("colors").insert({ nome }).select().single();
+    if(error){
+      if(error.code === "23505"){
+        // corrida: outra sessão cadastrou a mesma cor entre o find() e o insert()
+        await loadColorsFromSupabase();
+        const retry = db.colors.find(c => c.nome.trim().toLowerCase() === nome.toLowerCase());
+        if(retry) return retry.id;
+      }
+      toast("Falhou ao cadastrar cor", error.message);
+      return null;
+    }
+
+    db.colors.push(data);
+    db.colors.sort((a,b)=>a.nome.localeCompare(b.nome,"pt-BR"));
+    return data.id;
+  }
+
+  function renderColorSelect(){
+    const sel = document.getElementById("p_cor");
+    if(!sel) return;
+    const current = sel.value;
+    sel.innerHTML = `<option value="">Selecione...</option>` +
+      db.colors.map(c=>`<option value="${escapeHtml(c.id)}">${escapeHtml(c.nome)}</option>`).join("") +
+      `<option value="__NOVA__">+ Cadastrar nova cor</option>`;
+    if(db.colors.some(c=>c.id===current) || current==="__NOVA__") sel.value = current;
+  }
+
+  function renderColorChips(){
+    const box = document.getElementById("colorChipsList");
+    if(!box) return;
+    if(!db.colors.length){
+      box.textContent = "Nenhuma cor cadastrada ainda.";
+      return;
+    }
+    box.innerHTML = db.colors.map(c => `
+      <span data-color-chip="${escapeHtml(c.id)}" style="display:inline-flex;align-items:center;gap:4px;padding:3px 8px;margin:2px;border:1px solid var(--line);border-radius:999px">
+        ${escapeHtml(c.nome)}
+        <button data-del-color="${escapeHtml(c.id)}" title="Remover cor" style="border:none;background:none;cursor:pointer;color:inherit;font-weight:700">×</button>
+      </span>
+    `).join("");
+
+    box.querySelectorAll("button[data-del-color]").forEach(b=>{
+      b.addEventListener("click", async ()=>{
+        const c = db.colors.find(x=>x.id===b.dataset.delColor);
+        if(!c) return;
+        if(!confirm(`Remover a cor "${c.nome}"? Só funciona se nenhum produto estiver usando ela.`)) return;
+        b.disabled = true;
+        const { error } = await sb.from("colors").delete().eq("id", c.id);
+        b.disabled = false;
+        if(error){
+          if(error.code === "23503") return toast("Não pode remover", `A cor "${c.nome}" está em uso em pelo menos um produto.`);
+          return toast("Falhou", error.message);
+        }
+        db.colors = db.colors.filter(x=>x.id!==c.id);
+        renderColorSelect();
+        renderColorChips();
+        toast("Removida", `Cor "${c.nome}" removida.`);
+      });
+    });
+  }
+
+  document.getElementById("p_cor").addEventListener("change", ()=>{
+    const isNova = document.getElementById("p_cor").value === "__NOVA__";
+    document.getElementById("p_cor_nova").style.display = isNova ? "" : "none";
+    if(!isNova) document.getElementById("p_cor_nova").value = "";
+  });
 
   /* =========================
      ESTOQUE — Supabase
@@ -2717,6 +2846,23 @@
     const btnSave = document.getElementById("btnAddProduct");
     btnSave.disabled = true;
 
+    // Cor é obrigatória (mesma lógica do preço varejo) — resolve/cria ANTES
+    // de mexer em qualquer coisa, com o botão já travado (resolveOrCreateColor
+    // grava no banco se for cor nova, não pode rodar duas vezes num duplo clique).
+    let colorId = document.getElementById("p_cor").value;
+    if(colorId === "__NOVA__"){
+      const novaCorNome = document.getElementById("p_cor_nova").value.trim();
+      if(!novaCorNome){ btnSave.disabled = false; return toast("Faltou cor","Digite o nome da nova cor."); }
+      colorId = await resolveOrCreateColor(novaCorNome);
+      if(!colorId){ btnSave.disabled = false; return; } // resolveOrCreateColor já mostrou o toast de erro
+      renderColorSelect();
+      renderColorChips();
+    } else if(!colorId){
+      btnSave.disabled = false;
+      return toast("Faltou cor","Selecione a cor do produto (obrigatório).");
+    }
+    const colorSuffix = colorSlug((db.colors.find(c=>c.id===colorId)||{}).nome);
+
     // ═══════════════════════════════════════
     // MODO EDIÇÃO: Salvar alterações
     // ═══════════════════════════════════════
@@ -2726,19 +2872,22 @@
 
       const newStock = Math.max(0, Math.floor(toNum(document.getElementById(`p_stock_${p.size.toLowerCase()}`).value)));
       const patch = {
-        sku: baseSku ? `${baseSku}-${p.size}` : p.sku,
-        name, cat, fabric, cost, note,
+        sku: baseSku ? `${baseSku}-${colorSuffix}-${p.size}` : p.sku,
+        name, cat, fabric, cost, note, color_id: colorId,
         price_atacado: priceAtacado, price_varejo: priceVarejo,
         stock: newStock,
         ncm: ncm || null, cfop: cfop || null, cest: cest || null,
         csosn: csosn || null, origem, unidade
       };
 
-      const { data, error } = await sb.from("products").update(patch).eq("id", p.id).select().single();
+      const { data, error } = await sb.from("products").update(patch).eq("id", p.id).select("*, colors(nome)").single();
       btnSave.disabled = false;
       if(error) return toast("Falhou", error.message);
 
-      Object.assign(p, data);
+      Object.assign(p, data, {
+        priceAtacado: data.price_atacado, priceVarejo: data.price_varejo,
+        colorId: data.color_id, colorName: data.colors?.nome || ""
+      });
       toast("Salvo!","Alterações aplicadas com sucesso.");
       clearProductForm();
       renderProducts();
@@ -2760,18 +2909,22 @@
     // barcode NÃO é enviado — o Postgres gera pela sequência do servidor
     // (product_barcode_seq), substituindo o contador por dispositivo.
     const rows = Object.entries(grades).map(([size, stock])=>({
-      sku: baseSku ? `${baseSku}-${size}` : "",
-      name, cat, fabric, size, cost, stock, note,
+      sku: baseSku ? `${baseSku}-${colorSuffix}-${size}` : "",
+      name, cat, fabric, size, cost, stock, note, color_id: colorId,
       price_atacado: priceAtacado, price_varejo: priceVarejo,
       ncm: ncm || null, cfop: cfop || null, cest: cest || null,
       csosn: csosn || null, origem, unidade
     }));
 
-    const { data, error } = await sb.from("products").insert(rows).select();
+    const { data, error } = await sb.from("products").insert(rows).select("*, colors(nome)");
     btnSave.disabled = false;
     if(error) return toast("Falhou", error.message);
 
-    db.products = [...data, ...db.products];
+    const mapped = data.map(p => ({
+      ...p, priceAtacado: p.price_atacado, priceVarejo: p.price_varejo,
+      colorId: p.color_id, colorName: p.colors?.nome || ""
+    }));
+    db.products = [...mapped, ...db.products];
     toast("Códigos gerados",`${data.length} produto(s) criado(s): ${data.map(p=>p.barcode).join(", ")}`);
     clearProductForm();
     renderProducts();
@@ -2790,10 +2943,13 @@
     // Resetar selects
     document.getElementById("p_cat").value = "";
     document.getElementById("p_fabric").value = "";
+    document.getElementById("p_cor").value = "";
     document.getElementById("p_cat_outro").value = "";
     document.getElementById("p_fabric_outro").value = "";
+    document.getElementById("p_cor_nova").value = "";
     document.getElementById("p_cat_outro").style.display = "none";
     document.getElementById("p_fabric_outro").style.display = "none";
+    document.getElementById("p_cor_nova").style.display = "none";
 
     // Resetar modo de edição
     editingProductId = null;
@@ -2847,7 +3003,12 @@
       document.getElementById("p_fabric_outro").value = p.fabric || "";
       document.getElementById("p_fabric_outro").style.display = "block";
     }
-    
+
+    // Cor: sempre existe no select (cadastro central, não tem "outro" livre)
+    document.getElementById("p_cor").value = p.colorId || "";
+    document.getElementById("p_cor_nova").value = "";
+    document.getElementById("p_cor_nova").style.display = "none";
+
     // Preencher estoque do tamanho específico
     ["G1","G2","G3","G4","G5"].forEach(g => document.getElementById(`p_stock_${g.toLowerCase()}`).value = "0");
     document.getElementById(`p_stock_${p.size.toLowerCase()}`).value = p.stock || 0;
@@ -2892,7 +3053,8 @@
       if(!q) return true;
       return (p.name||"").toLowerCase().includes(q)
         || (p.barcode||"").toLowerCase().includes(q)
-        || (p.sku||"").toLowerCase().includes(q);
+        || (p.sku||"").toLowerCase().includes(q)
+        || (p.colorName||"").toLowerCase().includes(q);
     });
 
     const tb = document.getElementById("prodTable");
@@ -2925,16 +3087,23 @@
         }).join('')}
         <option value="__OUTRO__" ${(!fabricOptions.includes(p.fabric) && p.fabric) ? 'selected' : ''}>Outro: ${escapeHtml(p.fabric||'')}</option>
       </select>`;
-      
+
+      // SELECT de Cor
+      const corSelect = `<select data-edit="cor" data-pid="${escapeHtml(p.id)}" style="width:100%;padding:6px;font-size:13px">
+        ${db.colors.map(c => `<option value="${escapeHtml(c.id)}" ${c.id===p.colorId?'selected':''}>${escapeHtml(c.nome)}</option>`).join('')}
+        <option value="__NOVA__">+ Nova cor...</option>
+      </select>`;
+
       return `
         <tr ${sel}>
           <td class="small" style="width:8%">${escapeHtml(p.barcode)}</td>
-          <td style="width:30%">
+          <td style="width:22%">
             <div style="font-weight:500">${escapeHtml(p.name)}</div>
             <div class="muted small" style="margin-top:4px">${p.sku?("SKU: "+escapeHtml(p.sku)):""}</div>
           </td>
-          <td style="width:15%">${catSelect}</td>
-          <td style="width:13%">${fabricSelect}</td>
+          <td style="width:11%">${catSelect}</td>
+          <td style="width:10%">${fabricSelect}</td>
+          <td style="width:10%">${corSelect}</td>
           <td style="width:5%;text-align:center">${escapeHtml(p.size||"")}</td>
           <td class="right" style="width:6%">${toNum(p.stock)}</td>
           <td class="right" style="width:7%">${fmtBRL(p.priceAtacado)}</td>
@@ -2956,38 +3125,66 @@
       });
     });
 
+    // NOTA: antes desses três campos gravavam só em saveDB() (localStorage
+    // vestigial de antes da migração pro Supabase) — dava um toast
+    // "Atualizado" mas NÃO gravava no banco de verdade; a mudança sumia no
+    // próximo reload. Corrigido aqui pra gravar via sb.from("products").update(),
+    // igual todo o resto do app desde a migração.
     tb.querySelectorAll("select[data-edit]").forEach(inp=>{
-      inp.addEventListener("change", ()=>{
+      inp.addEventListener("change", async ()=>{
         const pid = inp.dataset.pid;
         const field = inp.dataset.edit;
         const p = db.products.find(x=>x.id===pid);
         if(!p) return;
-        
+
+        let patch = null;
+
         if(field==="cat"){
           if(inp.value === "__OUTRO__"){
             const custom = prompt("Digite a categoria:", p.cat || "");
-            if(custom !== null) p.cat = custom.trim();
-            renderProducts();
-            saveDB("Produto editado");
-            toast("Atualizado",`${p.name} - categoria ajustada.`);
-            return;
+            if(custom === null || !custom.trim()){ renderProducts(); return; }
+            patch = { cat: custom.trim() };
+          } else {
+            patch = { cat: inp.value };
           }
-          p.cat = inp.value;
         }
-        
+
         if(field==="fabric"){
           if(inp.value === "__OUTRO__"){
             const custom = prompt("Digite o tecido:", p.fabric || "");
-            if(custom !== null) p.fabric = custom.trim();
-            renderProducts();
-            saveDB("Produto editado");
-            toast("Atualizado",`${p.name} - tecido ajustado.`);
-            return;
+            if(custom === null || !custom.trim()){ renderProducts(); return; }
+            patch = { fabric: custom.trim() };
+          } else {
+            patch = { fabric: inp.value };
           }
-          p.fabric = inp.value;
         }
 
-        saveDB("Produto editado");
+        if(field==="cor"){
+          if(inp.value === "__NOVA__"){
+            const custom = prompt("Digite o nome da nova cor:", "");
+            if(custom === null || !custom.trim()){ renderProducts(); return; }
+            inp.disabled = true;
+            const colorId = await resolveOrCreateColor(custom.trim());
+            inp.disabled = false;
+            if(!colorId){ renderProducts(); return; }
+            patch = { color_id: colorId };
+          } else {
+            patch = { color_id: inp.value };
+          }
+        }
+
+        if(!patch) return;
+
+        inp.disabled = true;
+        const { data, error } = await sb.from("products").update(patch).eq("id", p.id).select("*, colors(nome)").single();
+        inp.disabled = false;
+        if(error) return toast("Falhou", error.message);
+
+        Object.assign(p, data, {
+          priceAtacado: data.price_atacado, priceVarejo: data.price_varejo,
+          colorId: data.color_id, colorName: data.colors?.nome || ""
+        });
+        renderProducts();
         toast("Atualizado",`${p.name} ajustado.`);
       });
     });
@@ -4111,13 +4308,14 @@
 
     const matches = db.products.filter(p=>
       (p.name && p.name.toLowerCase().includes(term)) ||
-      (p.barcode && String(p.barcode).toLowerCase().includes(term))
+      (p.barcode && String(p.barcode).toLowerCase().includes(term)) ||
+      (p.colorName && p.colorName.toLowerCase().includes(term))
     ).slice(0, 20);
 
     matches.forEach(p=>{
       const div = document.createElement("div");
       div.className = "eti-item-lista";
-      div.innerHTML = `<b>${escapeHtml(p.name)}</b> <span style="float:right;color:var(--accent)">${escapeHtml(p.size||"")}</span><br><small class="muted">Ref: ${escapeHtml(p.barcode)} | Est: ${toNum(p.stock)}</small>`;
+      div.innerHTML = `<b>${escapeHtml(p.name)}${p.colorName?(" — "+escapeHtml(p.colorName)):""}</b> <span style="float:right;color:var(--accent)">${escapeHtml(p.size||"")}</span><br><small class="muted">Ref: ${escapeHtml(p.barcode)} | Est: ${toNum(p.stock)}</small>`;
       div.onclick = ()=>etiSelecionar(p);
       list.appendChild(div);
     });
@@ -4199,7 +4397,7 @@
     
     if(matches.length === 1){
       const p = matches[0];
-      box.innerHTML = `<b>${escapeHtml(p.name)}</b> (${escapeHtml(p.size)})` +
+      box.innerHTML = `<b>${escapeHtml(p.name)}</b> (${escapeHtml(p.size)}${p.colorName?(" — "+escapeHtml(p.colorName)):""})` +
         `<br><span class="muted small">${escapeHtml(p.cat||"")}${p.fabric?(" | "+escapeHtml(p.fabric)):""}</span>` +
         `<br><span class="muted small">Estoque: ${toNum(p.stock)} | Atacado: ${fmtBRL(p.priceAtacado)} | Varejo: ${fmtBRL(p.priceVarejo)} | Custo: ${fmtBRL(p.cost)}</span>`;
     } else {
@@ -4264,7 +4462,7 @@
     const q = query.toLowerCase();
     const list = db.products.filter(p=>{
       if(!q) return true;
-      return (p.name||"").toLowerCase().includes(q) || (p.barcode||"").toLowerCase().includes(q) || (p.cat||"").toLowerCase().includes(q) || (p.fabric||"").toLowerCase().includes(q) || (p.sku||"").toLowerCase().includes(q);
+      return (p.name||"").toLowerCase().includes(q) || (p.barcode||"").toLowerCase().includes(q) || (p.cat||"").toLowerCase().includes(q) || (p.fabric||"").toLowerCase().includes(q) || (p.sku||"").toLowerCase().includes(q) || (p.colorName||"").toLowerCase().includes(q);
     }).slice(0,50);
 
     const tb = document.getElementById("stockManualProductTable");
@@ -4272,7 +4470,7 @@
       return `
         <tr>
           <td>
-            <div>${escapeHtml(p.name)}</div>
+            <div>${escapeHtml(p.name)}${p.colorName?(" — "+escapeHtml(p.colorName)):""}</div>
             <div class="muted small">${escapeHtml(p.cat||"")}${p.fabric?(" | "+escapeHtml(p.fabric)):""}</div>
           </td>
           <td>${escapeHtml(p.size||"")}</td>
@@ -4299,7 +4497,7 @@
     
     const info = document.getElementById("stockEntryInfo");
     info.innerHTML = `
-      <b>Produto:</b> ${escapeHtml(product.name)}<br>
+      <b>Produto:</b> ${escapeHtml(product.name)}${product.colorName?(" — "+escapeHtml(product.colorName)):""}<br>
       <b>Grade:</b> ${escapeHtml(product.size||"")}<br>
       <b>Estoque atual:</b> ${toNum(product.stock)}<br>
       <b>Custo atual:</b> ${fmtBRL(product.cost)}
@@ -4378,17 +4576,20 @@
     const cat = catEl.value || "";
     const size = sizeEl.value || "";
 
-    // agrupar por modelo (nome + categoria + tecido)
+    // agrupar por modelo (nome + categoria + tecido + cor) — cor entra na
+    // chave pra não misturar estoque de "Vestido Preto" com "Vestido Azul"
+    // na mesma linha do relatório.
     const map = new Map();
     for(const p of db.products){
       const name = String(p.name||"").trim();
       const gcat = String(p.cat||"").trim();
       const gfabric = String(p.fabric||"").trim();
-      const key = `${name}||${gcat}||${gfabric}`;
+      const gcolor = String(p.colorName||"").trim();
+      const key = `${name}||${gcat}||${gfabric}||${gcolor}`;
 
       if(!map.has(key)){
         map.set(key, {
-          name, cat:gcat, fabric:gfabric,
+          name, cat:gcat, fabric:gfabric, color:gcolor,
           sizes:{G1:0,G2:0,G3:0,G4:0,G5:0},
           total:0,
           costMin: null, costMax: null,
@@ -4426,8 +4627,9 @@
         const inName = (g.name||"").toLowerCase().includes(q);
         const inCat = (g.cat||"").toLowerCase().includes(q);
         const inFab = (g.fabric||"").toLowerCase().includes(q);
+        const inColor = (g.color||"").toLowerCase().includes(q);
         const inBar = g.barcodes.some(b=>String(b||"").toLowerCase().includes(q));
-        if(!(inName || inCat || inFab || inBar)) return false;
+        if(!(inName || inCat || inFab || inColor || inBar)) return false;
       }
       if(cat && g.cat !== cat) return false;
       if(size && toNum(g.sizes[size]) <= 0) return false;
@@ -4460,6 +4662,7 @@
           <td>${escapeHtml(g.name)}</td>
           <td class="small">${escapeHtml(g.cat||"")}</td>
           <td class="small">${escapeHtml(g.fabric||"")}</td>
+          <td class="small">${escapeHtml(g.color||"")}</td>
           <td class="right">${toNum(g.sizes.G1||0)}</td>
           <td class="right">${toNum(g.sizes.G2||0)}</td>
           <td class="right">${toNum(g.sizes.G3||0)}</td>
@@ -4623,7 +4826,7 @@
     const q = query.toLowerCase();
     const list = db.products.filter(p=>{
       if(!q) return true;
-      return (p.name||"").toLowerCase().includes(q) || (p.barcode||"").toLowerCase().includes(q) || (p.cat||"").toLowerCase().includes(q) || (p.fabric||"").toLowerCase().includes(q) || (p.sku||"").toLowerCase().includes(q);
+      return (p.name||"").toLowerCase().includes(q) || (p.barcode||"").toLowerCase().includes(q) || (p.cat||"").toLowerCase().includes(q) || (p.fabric||"").toLowerCase().includes(q) || (p.sku||"").toLowerCase().includes(q) || (p.colorName||"").toLowerCase().includes(q);
     }).slice(0,50);
 
     const tb = document.getElementById("manualProductTable");
@@ -4631,7 +4834,7 @@
       return `
         <tr>
           <td>
-            <div>${escapeHtml(p.name)}</div>
+            <div>${escapeHtml(p.name)}${p.colorName?(" — "+escapeHtml(p.colorName)):""}</div>
             <div class="muted small">${escapeHtml(p.cat||"")}${p.fabric?(" | "+escapeHtml(p.fabric)):""}</div>
           </td>
           <td class="small">${escapeHtml(p.barcode)}</td>
@@ -5784,6 +5987,7 @@
      INIT (chamado só depois do login, ver enterApp())
   ========================= */
   async function initApp(){
+    await loadColorsFromSupabase();
     await loadProductsFromSupabase();
     await loadStockMovesFromSupabase();
     await loadClientsFromSupabase();
@@ -5794,6 +5998,8 @@
     await loadMovimentacoesFromSupabase();
     setTab("venda");
     renderHome();
+    renderColorSelect();
+    renderColorChips();
     renderProducts();
     renderClients();
     renderVendedores();
