@@ -1670,6 +1670,17 @@
       </div>
 
     </div>
+
+    <div class="card">
+      <h2>Exportar catálogo (Nuvemshop)</h2>
+      <div class="warnBox small">
+        Gera um CSV no formato exato que a Nuvemshop aceita pra importar produtos em massa (Produtos → Importar, dentro do painel deles). Usa o preço <b>Varejo</b> — a Nuvemshop é a loja pro consumidor final, não pro cliente revendedor. Confira o arquivo gerado antes de importar de verdade lá.
+      </div>
+      <div class="sep"></div>
+      <div class="btns">
+        <button class="btn ok" id="btnExportNuvemshop">Baixar CSV pra Nuvemshop</button>
+      </div>
+    </div>
   </section>
 </main>
 </div>
@@ -2198,6 +2209,26 @@
     if(!words.length) return "";
     if(words.length === 1) return "VF-" + words[0].slice(0,6);
     return "VF-" + words[0].slice(0,4) + "-" + words[1].slice(0,3);
+  }
+
+  // "Identificador URL" do CSV da Nuvemshop -- slug minusculo, sem acento,
+  // hifens no lugar de espaco/pontuacao.
+  function slugifyNuvemshop(s){
+    return asciiUpper(s)
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g,"-")
+      .replace(/^-+|-+$/g,"");
+  }
+  // Campo de CSV separado por ";" (padrao do arquivo de importacao da
+  // Nuvemshop) -- entre aspas se tiver ";", aspas ou quebra de linha.
+  function csvFieldNuvemshop(v){
+    const s = (v===null || v===undefined) ? "" : String(v);
+    // O template real da Nuvemshop tambem coloca aspas em qualquer campo
+    // com espaco (nao so ; " ou quebra de linha) -- reproduzido aqui pra
+    // bater exatamente com o formato deles, mesmo sem ser exigido pelo
+    // CSV em si.
+    if(/[;"\n ]/.test(s)) return '"' + s.replace(/"/g,'""') + '"';
+    return s;
   }
   // Formata uma data-SÓ (sem hora, tipo "2026-08-01" vindo de um campo `date`
   // do Postgres) direto pela string — não usar new Date("2026-08-01") pra
@@ -6235,6 +6266,90 @@
     a.click();
     URL.revokeObjectURL(url);
     toast("Backup gerado","Arquivo baixado.");
+  });
+
+  // Exportar catalogo pro formato de importacao em massa da Nuvemshop --
+  // pedido do Kennedy como alternativa/complemento a integracao por API
+  // (isso aqui nao depende de nenhuma credencial, so do modelo real de
+  // CSV deles, que ele mandou -- ver produtos.csv na raiz do repo).
+  const NUVEMSHOP_CSV_HEADER = [
+    'Identificador URL','Nome','Categorias','Nome da variação 1','Valor da variação 1',
+    'Nome da variação 2','Valor da variação 2','Nome da variação 3','Valor da variação 3',
+    'Preço','Preço promocional','Peso (kg)','Altura (cm)','Largura (cm)','Comprimento (cm)',
+    'Estoque','SKU','Código de barras','Exibir na loja','Frete gratis','Descrição','Tags',
+    'Título para SEO','Descrição para SEO','Marca','Produto Físico',
+    'MPN (Cód. Exclusivo Modelo Fabricante)','Sexo','Faixa etária','Custo','Visibilidade'
+  ];
+
+  document.getElementById("btnExportNuvemshop").addEventListener("click", ()=>{
+    if(!db.products.length) return toast("Sem produtos","Cadastre produtos antes de exportar.");
+
+    // Agrupa por (nome + categoria + tecido) -- cor e tamanho viram
+    // VARIACOES do mesmo produto Nuvemshop, nao produtos separados.
+    const groups = new Map();
+    for(const p of db.products){
+      const key = `${p.name}||${p.cat||""}||${p.fabric||""}`;
+      if(!groups.has(key)){
+        groups.set(key, { name:p.name, cat:p.cat||"", fabric:p.fabric||"", items:[] });
+      }
+      groups.get(key).items.push(p);
+    }
+    // Nuvemshop so tem 1 descricao por produto (nao por variacao) -- usa a
+    // primeira observacao nao-vazia entre as variacoes do grupo, nao
+    // necessariamente a do primeiro item adicionado.
+    groups.forEach(g=>{ g.note = (g.items.find(p=>p.note) || {}).note || ""; });
+
+    const rows = [NUVEMSHOP_CSV_HEADER];
+    groups.forEach(g=>{
+      const slug = slugifyNuvemshop(g.name + (g.fabric ? " "+g.fabric : ""));
+      g.items.forEach((p, idx)=>{
+        const first = idx === 0;
+        const row = {
+          'Identificador URL': slug,
+          'Nome': first ? g.name : "",
+          'Categorias': first ? g.cat : "",
+          'Nome da variação 1': "Cor",
+          'Valor da variação 1': p.colorName || "",
+          'Nome da variação 2': "Tamanho",
+          'Valor da variação 2': p.size || "",
+          'Nome da variação 3': "",
+          'Valor da variação 3': "",
+          'Preço': toNum(p.priceVarejo).toFixed(2),
+          'Preço promocional': "",
+          'Peso (kg)': "",
+          'Altura (cm)': "",
+          'Largura (cm)': "",
+          'Comprimento (cm)': "",
+          'Estoque': toNum(p.stock),
+          'SKU': p.sku || "",
+          'Código de barras': p.barcode || "",
+          'Exibir na loja': first ? "SIM" : "",
+          'Frete gratis': "NÃO",
+          'Descrição': first ? g.note : "",
+          'Tags': "",
+          'Título para SEO': "",
+          'Descrição para SEO': "",
+          'Marca': "",
+          'Produto Físico': "SIM",
+          'MPN (Cód. Exclusivo Modelo Fabricante)': "",
+          'Sexo': "",
+          'Faixa etária': "",
+          'Custo': toNum(p.cost).toFixed(2),
+          'Visibilidade': first ? "Visível" : ""
+        };
+        rows.push(NUVEMSHOP_CSV_HEADER.map(h => row[h]));
+      });
+    });
+
+    const csv = rows.map(r => r.map(csvFieldNuvemshop).join(";")).join("\n");
+    const blob = new Blob([csv], { type:"text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `vaidosa_nuvemshop_${new Date().toISOString().slice(0,10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast("CSV gerado", `${db.products.length} produto(s) exportado(s), agrupados em ${groups.size} produto(s) na Nuvemshop (cor/tamanho viram variação).`);
   });
 
   document.getElementById("btnResetCounter").addEventListener("click", ()=>{
