@@ -1,0 +1,9 @@
+project_id = "ysultkzfhgtyujbomfqz"
+
+# Callback do OAuth da Nuvemshop: a Nuvemshop redireciona o navegador do
+# Kennedy direto pra essa URL depois de ele autorizar o app, sem nenhum
+# token de sessão do Supabase junto — por isso verify_jwt precisa ser
+# false só nessa função (as outras, se um dia existirem aqui, ficam com
+# o padrão true).
+[functions.nuvemshop-oauth-callback]
+verify_jwt = false
