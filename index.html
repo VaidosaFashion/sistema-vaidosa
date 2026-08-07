@@ -98,10 +98,40 @@
       margin-left:260px;
       min-height:100vh;
     }
+
+    /* Menu lateral em tela estreita (celular, ou painel lateral do
+       navegador) -- antes o .sidebar de 260px fixo tomava a tela quase
+       inteira num celular e empurrava o conteudo real pra fora, cortado.
+       Agora vira um menu "hamburguer" que desliza por cima, fechado por
+       padrao. */
+    .mobileMenuBtn{ display:none; }
+    .sidebarOverlay{ display:none; }
+    @media(max-width:900px){
+      .mobileMenuBtn{
+        display:flex; align-items:center; justify-content:center;
+        position:fixed; top:14px; left:14px; z-index:200;
+        width:42px; height:42px; border-radius:10px;
+        background:#fff; border:1px solid var(--line); box-shadow:var(--shadow);
+        cursor:pointer;
+      }
+      .sidebar{
+        transform:translateX(-100%);
+        transition:transform .25s ease;
+      }
+      .sidebar.open{ transform:translateX(0); }
+      .main-container{ margin-left:0; padding-top:64px; }
+      .sidebarOverlay{
+        display:none;
+        position:fixed; inset:0; background:rgba(15,23,42,.4); z-index:99;
+      }
+      .sidebarOverlay.show{ display:block; }
+    }
+
     .wrap{max-width:1600px;margin:0 auto;padding:24px}
     main{padding:0}
     .grid{display:grid;grid-template-columns:1fr;gap:16px}
     @media(min-width:980px){.grid.cols2{grid-template-columns:1fr 1fr}}
+    .grid > *{min-width:0}
     .card{
       background:var(--card);
       border:1px solid var(--line);
@@ -113,6 +143,12 @@
     .card:hover{box-shadow:var(--shadow-lg);transform:translateY(-2px)}
     .card h2{font-size:15px;margin:0 0 16px;font-weight:600;color:var(--txt)}
     .row{display:grid;grid-template-columns:1fr;gap:12px}
+    /* Grid item default e' min-width:auto, que respeita o conteudo minimo
+       de <select> (a opcao mais longa, tipo nome de cliente/fornecedor) --
+       isso forcava a linha inteira (e a pagina toda) mais larga que a tela
+       num celular, cortando o resto do layout. min-width:0 deixa encolher
+       de verdade. */
+    .row > *{min-width:0}
     @media(min-width:680px){.row.cols2{grid-template-columns:1fr 1fr}.row.cols3{grid-template-columns:1fr 1fr 1fr}}
     @media(min-width:900px){.row.cols4{grid-template-columns:1fr 1fr 1fr 1fr}}
     label{font-size:13px;color:var(--muted);display:block;margin-bottom:6px;font-weight:500}
@@ -459,6 +495,11 @@
     <div id="loginError" class="login-error hide"></div>
   </div>
 </div>
+
+<button class="mobileMenuBtn hide" id="btnMobileMenu" aria-label="Abrir menu">
+  <svg width="22" height="22" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
+</button>
+<div class="sidebarOverlay" id="sidebarOverlay"></div>
 
 <aside class="sidebar hide" id="appSidebar">
   <div class="sidebar-header">
@@ -2012,6 +2053,7 @@
     document.getElementById("loginGate").classList.add("hide");
     document.getElementById("appSidebar").classList.remove("hide");
     document.getElementById("appMain").classList.remove("hide");
+    document.getElementById("btnMobileMenu").classList.remove("hide");
     const badge = document.getElementById("currentUserBadge");
     if(currentProfile) badge.textContent = currentProfile.display_name + (currentProfile.is_admin ? " (ADM)" : "");
     initApp();
@@ -2748,8 +2790,21 @@
     btn.addEventListener("click", ()=>{
       const t = btn.dataset.tab;
       setTab(t);
+      closeMobileMenu(); // trocar de aba já fecha o menu sozinho, num celular
     });
   });
+
+  // Menu "hamburguer" em tela estreita -- ver nota da CSS (.mobileMenuBtn).
+  function openMobileMenu(){
+    document.getElementById("appSidebar").classList.add("open");
+    document.getElementById("sidebarOverlay").classList.add("show");
+  }
+  function closeMobileMenu(){
+    document.getElementById("appSidebar").classList.remove("open");
+    document.getElementById("sidebarOverlay").classList.remove("show");
+  }
+  document.getElementById("btnMobileMenu").addEventListener("click", openMobileMenu);
+  document.getElementById("sidebarOverlay").addEventListener("click", closeMobileMenu);
 
   function setTab(t){
     document.querySelectorAll("nav button").forEach(b=>b.classList.toggle("active", b.dataset.tab===t));
