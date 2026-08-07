@@ -890,9 +890,10 @@
       </div>
       <div class="sep"></div>
       <div style="overflow-x:auto;max-height:540px">
-        <table style="width:100%;min-width:1280px">
+        <table style="width:100%;min-width:1320px">
           <thead>
             <tr>
+              <th style="width:3%"></th>
               <th style="width:8%">Barcode</th>
               <th style="width:22%">Produto</th>
               <th style="width:11%">Categoria</th>
@@ -912,7 +913,7 @@
       <div class="sep"></div>
       <div class="btns">
         <button class="btn warn" id="btnEditProduct" disabled>Editar selecionado</button>
-        <button class="btn bad" id="btnDeleteProduct" disabled>Excluir selecionado</button>
+        <button class="btn bad" id="btnDeleteProduct" disabled>Excluir selecionado(s)</button>
         <span class="pill" id="selectedProductPill">Nenhum selecionado</span>
       </div>
     </div>
@@ -2451,7 +2452,11 @@
     }));
   }
 
-  let selectedProductId = null;
+  // Multi-selecao, pedido do Kennedy: antes so dava pra marcar um produto
+  // por vez (clicar "Selecionar" -> editar/excluir -> repetir); ele queria
+  // clicar direto na linha e marcar varias de uma vez, principalmente pra
+  // excluir em lote sem precisar repetir o fluxo produto por produto.
+  let selectedProductIds = new Set();
   let selectedClientId = null;
   let editingClientId = null; // Controle de edição
   let currentSale = { items:[], finalizedSaleId:null };
@@ -2732,7 +2737,7 @@
     tabs.forEach(x=> document.getElementById("tab-"+x).classList.toggle("hide", x!==t) );
 
     if(t==="home") renderHome();
-    if(t==="produtos"){ selectedProductId=null; renderProducts(); }
+    if(t==="produtos"){ selectedProductIds.clear(); renderProducts(); }
     if(t==="clientes"){ 
       selectedClientId=null; 
       editingClientId=null;
@@ -2989,8 +2994,8 @@
 
   // Botão EDITAR produto
   document.getElementById("btnEditProduct").addEventListener("click", ()=>{
-    if(!selectedProductId) return;
-    const p = db.products.find(x=>x.id===selectedProductId);
+    if(selectedProductIds.size !== 1) return;
+    const p = db.products.find(x=>x.id===Array.from(selectedProductIds)[0]);
     if(!p) return;
 
     // Preencher formulário com dados do produto
@@ -3112,20 +3117,41 @@
   }
 
   document.getElementById("btnDeleteProduct").addEventListener("click", async ()=>{
-    if(!selectedProductId) return;
-    const p = db.products.find(x=>x.id===selectedProductId);
-    if(!p) return;
+    const ids = Array.from(selectedProductIds);
+    if(!ids.length) return;
 
-    const { data: usedRows, error: checkErr } = await sb.from("sale_items").select("id").eq("product_id", p.id).limit(1);
-    if(checkErr) return toast("Erro", checkErr.message);
-    if(usedRows && usedRows.length) return toast("Bloqueado","Produto já apareceu em vendas. Para manter histórico, não excluo. Zere estoque e pare de usar.");
+    const label = ids.length === 1
+      ? (db.products.find(x=>x.id===ids[0])?.name || "este produto")
+      : `${ids.length} produtos selecionados`;
+    if(!confirm(`Excluir ${label}? Produtos que já apareceram em alguma venda não são excluídos (ficam de fora, pra manter o histórico).`)) return;
 
-    const { error } = await sb.from("products").delete().eq("id", p.id);
-    if(error) return toast("Falhou", error.message);
+    const btn = document.getElementById("btnDeleteProduct");
+    btn.disabled = true;
 
-    db.products = db.products.filter(x=>x.id!==p.id);
-    selectedProductId=null;
-    toast("Excluído","Produto removido.");
+    let excluidos = 0, bloqueados = 0, falhas = 0;
+    for(const id of ids){
+      const p = db.products.find(x=>x.id===id);
+      if(!p) continue;
+
+      const { data: usedRows, error: checkErr } = await sb.from("sale_items").select("id").eq("product_id", p.id).limit(1);
+      if(checkErr){ falhas++; continue; }
+      if(usedRows && usedRows.length){ bloqueados++; continue; }
+
+      const { error } = await sb.from("products").delete().eq("id", p.id);
+      if(error){ falhas++; continue; }
+
+      db.products = db.products.filter(x=>x.id!==p.id);
+      selectedProductIds.delete(id);
+      excluidos++;
+    }
+
+    btn.disabled = false;
+
+    const partes = [`${excluidos} excluído(s)`];
+    if(bloqueados) partes.push(`${bloqueados} bloqueado(s) (já em venda)`);
+    if(falhas) partes.push(`${falhas} com erro`);
+    toast(excluidos ? "Concluído" : "Nada excluído", partes.join(", ") + ".");
+
     renderProducts();
     renderHome();
   });
@@ -3152,8 +3178,9 @@
     const fabricOptions = ['', 'Viscose', 'Viscosinho', 'Linho', 'Crepe', 'Duna', 'Alfaiataria', 'Moletinho', 'Jeans'];
     
     tb.innerHTML = list.map(p=>{
-      const sel = p.id===selectedProductId ? 'style="outline:2px solid rgba(230,0,126,.12);background:rgba(230,0,126,.04)"' : "";
-      
+      const isSel = selectedProductIds.has(p.id);
+      const sel = isSel ? 'style="outline:2px solid rgba(230,0,126,.12);background:rgba(230,0,126,.04)"' : "";
+
       // SELECT de Categoria
       const catSelect = `<select data-edit="cat" data-pid="${escapeHtml(p.id)}" style="width:100%;padding:6px;font-size:13px">
         ${catOptions.map(opt => {
@@ -3181,7 +3208,10 @@
       </select>`;
 
       return `
-        <tr ${sel}>
+        <tr ${sel} data-row-pid="${escapeHtml(p.id)}" style="cursor:pointer">
+          <td style="width:3%;text-align:center">
+            <input type="checkbox" data-check="${escapeHtml(p.id)}" ${isSel?'checked':''} />
+          </td>
           <td class="small" style="width:8%">${escapeHtml(p.barcode)}</td>
           <td style="width:22%">
             <div style="font-weight:500">${escapeHtml(p.name)}</div>
@@ -3195,24 +3225,35 @@
           <td class="right" style="width:7%">${fmtBRL(p.priceAtacado)}</td>
           <td class="right" style="width:7%">${fmtBRL(p.priceVarejo)}</td>
           <td class="right" style="width:7%">${fmtBRL(p.cost)}</td>
-          <td class="right" style="width:8%">
-            <div style="display:flex;flex-direction:column;gap:4px;align-items:flex-end">
-              <button class="btn small" data-select="${escapeHtml(p.id)}">Selecionar</button>
-              <button class="btn small" data-clone="${escapeHtml(p.id)}" title="Cria um produto novo com os mesmos dados, pra só trocar cor e quantidade">Clonar</button>
-            </div>
+          <td class="right" style="width:6%">
+            <button class="btn small" data-clone="${escapeHtml(p.id)}" title="Cria um produto novo com os mesmos dados, pra só trocar cor e quantidade">Clonar</button>
           </td>
         </tr>
       `;
     }).join("");
 
-    tb.querySelectorAll("button[data-select]").forEach(b=>{
-      b.addEventListener("click", ()=>{
-        selectedProductId = b.dataset.select;
-        document.getElementById("btnDeleteProduct").disabled = !selectedProductId;
-        document.getElementById("btnEditProduct").disabled = !selectedProductId;
-        const p = db.products.find(x=>x.id===selectedProductId);
-        document.getElementById("selectedProductPill").textContent = p ? `Selecionado: ${p.name} (${p.size})` : "Nenhum selecionado";
-        renderProducts();
+    // Multi-selecao: clicar em qualquer lugar da linha (fora de
+    // select/button/checkbox, que ja tem a propria acao) alterna a marcacao
+    // dela, igual clicar direto no checkbox -- pedido do Kennedy, pra nao
+    // precisar de um botao "Selecionar" separado pra cada produto.
+    function toggleProductSelection(id){
+      if(selectedProductIds.has(id)) selectedProductIds.delete(id);
+      else selectedProductIds.add(id);
+      renderProducts(); // recomputa highlight, checkbox marcado e o rodape (pill/botoes) tudo de uma vez
+    }
+
+    tb.querySelectorAll("tr[data-row-pid]").forEach(tr=>{
+      tr.addEventListener("click", (e)=>{
+        if(e.target.closest("select, button, input")) return;
+        toggleProductSelection(tr.dataset.rowPid);
+      });
+    });
+
+    tb.querySelectorAll("input[data-check]").forEach(cb=>{
+      // O listener da <tr> já ignora cliques dentro de "input" (ver acima),
+      // então clicar aqui não dispara toggle duplicado.
+      cb.addEventListener("click", ()=>{
+        toggleProductSelection(cb.dataset.check);
       });
     });
 
@@ -3287,8 +3328,18 @@
       });
     });
 
-    document.getElementById("btnDeleteProduct").disabled = !selectedProductId;
-    if(!selectedProductId) document.getElementById("selectedProductPill").textContent = "Nenhum selecionado";
+    document.getElementById("btnDeleteProduct").disabled = selectedProductIds.size === 0;
+    document.getElementById("btnEditProduct").disabled = selectedProductIds.size !== 1;
+
+    const pill = document.getElementById("selectedProductPill");
+    if(selectedProductIds.size === 0){
+      pill.textContent = "Nenhum selecionado";
+    } else if(selectedProductIds.size === 1){
+      const p = db.products.find(x=>x.id===Array.from(selectedProductIds)[0]);
+      pill.textContent = p ? `Selecionado: ${p.name} (${p.size})` : "Nenhum selecionado";
+    } else {
+      pill.textContent = `${selectedProductIds.size} selecionados`;
+    }
   }
 
   /* =========================
