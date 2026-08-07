@@ -111,6 +111,7 @@
     .card h2{font-size:15px;margin:0 0 16px;font-weight:600;color:var(--txt)}
     .row{display:grid;grid-template-columns:1fr;gap:12px}
     @media(min-width:680px){.row.cols2{grid-template-columns:1fr 1fr}.row.cols3{grid-template-columns:1fr 1fr 1fr}}
+    @media(min-width:900px){.row.cols4{grid-template-columns:1fr 1fr 1fr 1fr}}
     label{font-size:13px;color:var(--muted);display:block;margin-bottom:6px;font-weight:500}
     input,select,textarea{
       width:100%;
@@ -575,7 +576,7 @@
         Relatório do que você tem agora, com filtros por modelo, categoria e grade.
       </div>
 
-      <div class="row cols3">
+      <div class="row cols4">
         <div>
           <label>Buscar modelo</label>
           <input id="st_q" placeholder="Ex: Tulipa, Jeans, Bermuda..." />
@@ -583,6 +584,12 @@
         <div>
           <label>Categoria</label>
           <select id="st_cat">
+            <option value="">Todas</option>
+          </select>
+        </div>
+        <div>
+          <label>Cor</label>
+          <select id="st_color">
             <option value="">Todas</option>
           </select>
         </div>
@@ -601,10 +608,11 @@
 
       <div class="sep"></div>
 
-      <div class="kpi six" id="stockKpi">
+      <div class="kpi" id="stockKpi">
         <div class="box"><div class="t">Peças (qtd)</div><div class="v" id="st_kpi_qty">0</div></div>
         <div class="box"><div class="t">Valor em custo</div><div class="v" id="st_kpi_cost">R$ 0,00</div></div>
-        <div class="box"><div class="t">Valor em venda</div><div class="v" id="st_kpi_sell">R$ 0,00</div></div>
+        <div class="box"><div class="t">Valor em venda (Atacado)</div><div class="v" id="st_kpi_sell">R$ 0,00</div></div>
+        <div class="box"><div class="t">Valor em venda (Varejo)</div><div class="v" id="st_kpi_sell_varejo">R$ 0,00</div></div>
       </div>
 
       <div class="sep"></div>
@@ -624,9 +632,11 @@
               <th class="right">G5</th>
               <th class="right">Total</th>
               <th class="right">Custo unit</th>
-              <th class="right">Venda unit</th>
+              <th class="right">Atacado unit</th>
+              <th class="right">Varejo unit</th>
               <th class="right">Custo total</th>
-              <th class="right">Venda total</th>
+              <th class="right">Atacado total</th>
+              <th class="right">Varejo total</th>
             </tr>
           </thead>
           <tbody id="stockReportBody"></tbody>
@@ -1182,9 +1192,9 @@
       </div>
     </div>
 
-    <div class="card">
+    <div class="card" style="display:flex;flex-direction:column">
       <h2>Vendas recentes</h2>
-      <div style="overflow:auto;max-height:540px">
+      <div style="overflow:auto;flex:1;min-height:0">
         <table>
           <thead>
             <tr><th>Data</th><th>Cliente</th><th>Canal</th><th>Status</th><th class="right">Bruto</th><th class="right">Pago</th><th class="right">Líquido</th></tr>
@@ -1305,12 +1315,14 @@
       <div class="card">
         <h2>Fluxo de Caixa - Visão Mensal</h2>
         
-        <div class="row cols3">
+        <div class="row cols4">
           <div>
-            <label>Mês/Ano</label>
-            <select id="fin_fluxoMes">
-              <option value="">Selecione...</option>
-            </select>
+            <label>De</label>
+            <input type="date" id="fin_fluxoDataInicio" />
+          </div>
+          <div>
+            <label>Até</label>
+            <input type="date" id="fin_fluxoDataFim" />
           </div>
           <div>
             <label>Tipo</label>
@@ -1330,6 +1342,7 @@
             </select>
           </div>
         </div>
+        <div class="muted small" style="margin-top:6px">Filtra pela data de vencimento da conta. Deixe "De"/"Até" em branco pra ver todas as datas.</div>
 
         <div class="sep"></div>
 
@@ -3950,50 +3963,39 @@
     }).join("");
   }
 
-  // FLUXO DE CAIXA - VISÃO MENSAL
-  function popularMesesFluxo(){
-    const select = document.getElementById("fin_fluxoMes");
+  // FLUXO DE CAIXA - filtro por intervalo de datas (dia a dia, não só
+  // mês inteiro) -- pedido do Kennedy: "quero ver do dia 1 ao dia 2 de
+  // agosto quanto foi de venda" e o filtro só dava pra escolher o mês
+  // todo. Preenche De/Até com o mês atual só como ponto de partida — os
+  // campos continuam editáveis pra qualquer intervalo.
+  function initFluxoDatas(){
+    const inicioEl = document.getElementById("fin_fluxoDataInicio");
+    const fimEl = document.getElementById("fin_fluxoDataFim");
+    if(!inicioEl || !fimEl || inicioEl.value || fimEl.value) return; // não sobrescreve se já tiver valor (reabrir a aba não reseta o filtro)
+
     const hoje = new Date();
-    const opcoes = [];
-    
-    // Calcular quantos meses desde Janeiro 2026 até Dezembro 2030
-    const inicioAno = 2026;
-    const inicioMes = 0; // Janeiro
-    const fimAno = 2030;
-    const fimMes = 11; // Dezembro
-    
-    for(let ano = inicioAno; ano <= fimAno; ano++){
-      const mesInicio = (ano === inicioAno) ? inicioMes : 0;
-      const mesFim = (ano === fimAno) ? fimMes : 11;
-      
-      for(let mes = mesInicio; mes <= mesFim; mes++){
-        const mesNome = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'][mes];
-        opcoes.push(`<option value="${ano}-${String(mes+1).padStart(2,'0')}">${mesNome} ${ano}</option>`);
-      }
-    }
-    
-    select.innerHTML = '<option value="">Todos os meses</option>' + opcoes.join("");
-    
-    // Selecionar mês atual se estiver no range
-    const mesAtual = `${hoje.getFullYear()}-${String(hoje.getMonth()+1).padStart(2,'0')}`;
-    if(hoje.getFullYear() >= inicioAno && hoje.getFullYear() <= fimAno){
-      select.value = mesAtual;
-    }
+    const primeiroDia = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
+    const ultimoDia = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0);
+    const toIso = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    inicioEl.value = toIso(primeiroDia);
+    fimEl.value = toIso(ultimoDia);
   }
 
   function renderFluxoCaixa(){
-    const mesFiltro = document.getElementById("fin_fluxoMes").value;
+    const dataInicioFiltro = document.getElementById("fin_fluxoDataInicio").value;
+    const dataFimFiltro = document.getElementById("fin_fluxoDataFim").value;
     const tipoFiltro = document.getElementById("fin_fluxoTipo").value;
     const statusFiltro = document.getElementById("fin_fluxoStatus").value;
 
     let contas = [...db.contas];
 
-    // Filtrar por mês/ano
-    if(mesFiltro){
-      contas = contas.filter(c => {
-        const venc = c.proximoVencimento.substring(0, 7); // YYYY-MM
-        return venc === mesFiltro;
-      });
+    // Filtrar por intervalo de data (comparação de string YYYY-MM-DD
+    // funciona direto, sem precisar passar por new Date()).
+    if(dataInicioFiltro){
+      contas = contas.filter(c => c.proximoVencimento.slice(0,10) >= dataInicioFiltro);
+    }
+    if(dataFimFiltro){
+      contas = contas.filter(c => c.proximoVencimento.slice(0,10) <= dataFimFiltro);
     }
 
     // Filtrar por tipo
@@ -4065,7 +4067,8 @@
     }).join("");
   }
 
-  document.getElementById("fin_fluxoMes").addEventListener("change", renderFluxoCaixa);
+  document.getElementById("fin_fluxoDataInicio").addEventListener("change", renderFluxoCaixa);
+  document.getElementById("fin_fluxoDataFim").addEventListener("change", renderFluxoCaixa);
   document.getElementById("fin_fluxoTipo").addEventListener("change", renderFluxoCaixa);
   document.getElementById("fin_fluxoStatus").addEventListener("change", renderFluxoCaixa);
 
@@ -4368,7 +4371,7 @@
   async function renderFinanceiro(){
     await initCategoriasFinanceiro();
     renderCategorias();
-    popularMesesFluxo();
+    initFluxoDatas();
     popularMesesHistorico();
     renderDashboardFinanceiro();
     renderFluxoCaixa();
@@ -4710,19 +4713,28 @@
   function renderStockReport(){
     const qEl = document.getElementById("st_q");
     const catEl = document.getElementById("st_cat");
+    const colorEl = document.getElementById("st_color");
     const sizeEl = document.getElementById("st_size");
     const body = document.getElementById("stockReportBody");
-    if(!qEl || !catEl || !sizeEl || !body) return;
+    if(!qEl || !catEl || !colorEl || !sizeEl || !body) return;
 
     // popular categorias
     const cats = Array.from(new Set(db.products.map(p=>String(p.cat||"").trim()).filter(Boolean)))
       .sort((a,b)=>a.localeCompare(b,"pt-BR",{sensitivity:"base"}));
-    const current = catEl.value;
+    const currentCat = catEl.value;
     catEl.innerHTML = `<option value="">Todas</option>` + cats.map(c=>`<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join("");
-    if(cats.includes(current)) catEl.value = current;
+    if(cats.includes(currentCat)) catEl.value = currentCat;
+
+    // popular cores (só as que têm produto em estoque, igual categoria)
+    const colorsPresent = Array.from(new Set(db.products.map(p=>String(p.colorName||"").trim()).filter(Boolean)))
+      .sort((a,b)=>a.localeCompare(b,"pt-BR",{sensitivity:"base"}));
+    const currentColor = colorEl.value;
+    colorEl.innerHTML = `<option value="">Todas</option>` + colorsPresent.map(c=>`<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join("");
+    if(colorsPresent.includes(currentColor)) colorEl.value = currentColor;
 
     const q = qEl.value.trim().toLowerCase();
     const cat = catEl.value || "";
+    const color = colorEl.value || "";
     const size = sizeEl.value || "";
 
     // agrupar por modelo (nome + categoria + tecido + cor) — cor entra na
@@ -4742,10 +4754,12 @@
           sizes:{G1:0,G2:0,G3:0,G4:0,G5:0},
           sizeCostTotal:{G1:0,G2:0,G3:0,G4:0,G5:0},
           sizeSellTotal:{G1:0,G2:0,G3:0,G4:0,G5:0},
+          sizeSellVarejoTotal:{G1:0,G2:0,G3:0,G4:0,G5:0},
           total:0,
           costMin: null, costMax: null,
           priceMin: null, priceMax: null,
-          costTotal:0, sellTotal:0,
+          priceVarejoMin: null, priceVarejoMax: null,
+          costTotal:0, sellTotal:0, sellVarejoTotal:0,
           barcodes:[]
         });
       }
@@ -4756,20 +4770,26 @@
       g.sizes[sz] += st;
 
       const c = toNum(p.cost);
-      const pr = toNum(p.priceAtacado); // relatório de estoque usa atacado como referência
+      const pr = toNum(p.priceAtacado);
+      const prVarejo = toNum(p.priceVarejo);
       if(g.costMin === null){ g.costMin = c; g.costMax = c; }
       else { g.costMin = Math.min(g.costMin, c); g.costMax = Math.max(g.costMax, c); }
       if(g.priceMin === null){ g.priceMin = pr; g.priceMax = pr; }
       else { g.priceMin = Math.min(g.priceMin, pr); g.priceMax = Math.max(g.priceMax, pr); }
+      if(g.priceVarejoMin === null){ g.priceVarejoMin = prVarejo; g.priceVarejoMax = prVarejo; }
+      else { g.priceVarejoMin = Math.min(g.priceVarejoMin, prVarejo); g.priceVarejoMax = Math.max(g.priceVarejoMax, prVarejo); }
 
       g.costTotal += st * c;
       g.sellTotal += st * pr;
+      g.sellVarejoTotal += st * prVarejo;
       // Totais POR grade — sem isso, filtrar por "G1" não tinha como isolar
       // o custo/venda daquela grade especifica, só do modelo inteiro.
       if(g.sizeCostTotal[sz] == null) g.sizeCostTotal[sz] = 0;
       if(g.sizeSellTotal[sz] == null) g.sizeSellTotal[sz] = 0;
+      if(g.sizeSellVarejoTotal[sz] == null) g.sizeSellVarejoTotal[sz] = 0;
       g.sizeCostTotal[sz] += st * c;
       g.sizeSellTotal[sz] += st * pr;
+      g.sizeSellVarejoTotal[sz] += st * prVarejo;
       g.barcodes.push(String(p.barcode||""));
     }
 
@@ -4789,6 +4809,7 @@
         if(!(inName || inCat || inFab || inColor || inBar)) return false;
       }
       if(cat && g.cat !== cat) return false;
+      if(color && g.color !== color) return false;
       if(size && toNum(g.sizes[size]) <= 0) return false;
       return true;
     });
@@ -4802,18 +4823,22 @@
     const qtyFor = g => size ? toNum(g.sizes[size]||0) : toNum(g.total);
     const costTotalFor = g => size ? toNum(g.sizeCostTotal[size]||0) : toNum(g.costTotal);
     const sellTotalFor = g => size ? toNum(g.sizeSellTotal[size]||0) : toNum(g.sellTotal);
+    const sellVarejoTotalFor = g => size ? toNum(g.sizeSellVarejoTotal[size]||0) : toNum(g.sellVarejoTotal);
 
     // KPIs
     const totQty = groups.reduce((s,g)=>s+qtyFor(g),0);
     const totCost = groups.reduce((s,g)=>s+costTotalFor(g),0);
     const totSell = groups.reduce((s,g)=>s+sellTotalFor(g),0);
+    const totSellVarejo = groups.reduce((s,g)=>s+sellVarejoTotalFor(g),0);
 
     const kQty = document.getElementById("st_kpi_qty");
     const kCost = document.getElementById("st_kpi_cost");
     const kSell = document.getElementById("st_kpi_sell");
+    const kSellVarejo = document.getElementById("st_kpi_sell_varejo");
     if(kQty) kQty.textContent = String(totQty);
     if(kCost) kCost.textContent = fmtBRL(totCost);
     if(kSell) kSell.textContent = fmtBRL(totSell);
+    if(kSellVarejo) kSellVarejo.textContent = fmtBRL(totSellVarejo);
 
     const hint = document.getElementById("stockReportHint");
     if(hint) hint.textContent = size
@@ -4830,6 +4855,7 @@
     body.innerHTML = groups.map(g=>{
       const cu = (g.costMin==null) ? "" : (g.costMin===g.costMax ? fmtBRL(g.costMin) : `${fmtBRL(g.costMin)} a ${fmtBRL(g.costMax)}`);
       const vu = (g.priceMin==null) ? "" : (g.priceMin===g.priceMax ? fmtBRL(g.priceMin) : `${fmtBRL(g.priceMin)} a ${fmtBRL(g.priceMax)}`);
+      const vuVarejo = (g.priceVarejoMin==null) ? "" : (g.priceVarejoMin===g.priceVarejoMax ? fmtBRL(g.priceVarejoMin) : `${fmtBRL(g.priceVarejoMin)} a ${fmtBRL(g.priceVarejoMax)}`);
       return `
         <tr>
           <td>${escapeHtml(g.name)}</td>
@@ -4844,8 +4870,10 @@
           <td class="right"><b>${qtyFor(g)}</b></td>
           <td class="right">${cu}</td>
           <td class="right">${vu}</td>
+          <td class="right">${vuVarejo}</td>
           <td class="right">${fmtBRL(costTotalFor(g))}</td>
           <td class="right">${fmtBRL(sellTotalFor(g))}</td>
+          <td class="right">${fmtBRL(sellVarejoTotalFor(g))}</td>
         </tr>
       `;
     }).join("");
@@ -4855,9 +4883,11 @@
   (function bindStockReportFilters(){
     const qEl = document.getElementById("st_q");
     const catEl = document.getElementById("st_cat");
+    const colorEl = document.getElementById("st_color");
     const sizeEl = document.getElementById("st_size");
     if(qEl) qEl.addEventListener("input", renderStockReport);
     if(catEl) catEl.addEventListener("change", renderStockReport);
+    if(colorEl) colorEl.addEventListener("change", renderStockReport);
     if(sizeEl) sizeEl.addEventListener("change", renderStockReport);
   })();
 
