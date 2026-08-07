@@ -51,6 +51,9 @@
       font-weight:600;
       letter-spacing:-0.02em;
     }
+    .brand-logo{ display:block; max-width:100%; height:auto; }
+    .sidebar-header .brand-logo{ max-width:150px; margin-bottom:6px; }
+    .login-logo{ max-width:220px; margin:0 auto 14px; }
     .sidebar-header .sub{
       color:var(--muted);
       font-size:11px;
@@ -441,7 +444,7 @@
 
 <div id="loginGate" class="login-gate">
   <div class="login-card">
-    <h1>Vaidosa Gestão</h1>
+    <img src="assets/logo.png" alt="Vaidosa Fashion Plus" class="brand-logo login-logo" />
     <div class="sub" id="loginSub">Quem é você?</div>
 
     <div id="loginStepNames" class="login-names"></div>
@@ -460,7 +463,8 @@
 
 <aside class="sidebar hide" id="appSidebar">
   <div class="sidebar-header">
-    <h1>Vaidosa Gestão <span class="badgeAccent">Premium</span></h1>
+    <img src="assets/logo.png" alt="Vaidosa Fashion Plus" class="brand-logo" />
+    <span class="badgeAccent">Premium</span>
     <div class="sub">Sistema completo de gestão para moda plus size</div>
   </div>
   <nav>
