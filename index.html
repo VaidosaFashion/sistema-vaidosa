@@ -4689,6 +4689,8 @@
         map.set(key, {
           name, cat:gcat, fabric:gfabric, color:gcolor,
           sizes:{G1:0,G2:0,G3:0,G4:0,G5:0},
+          sizeCostTotal:{G1:0,G2:0,G3:0,G4:0,G5:0},
+          sizeSellTotal:{G1:0,G2:0,G3:0,G4:0,G5:0},
           total:0,
           costMin: null, costMax: null,
           priceMin: null, priceMax: null,
@@ -4711,6 +4713,12 @@
 
       g.costTotal += st * c;
       g.sellTotal += st * pr;
+      // Totais POR grade — sem isso, filtrar por "G1" não tinha como isolar
+      // o custo/venda daquela grade especifica, só do modelo inteiro.
+      if(g.sizeCostTotal[sz] == null) g.sizeCostTotal[sz] = 0;
+      if(g.sizeSellTotal[sz] == null) g.sizeSellTotal[sz] = 0;
+      g.sizeCostTotal[sz] += st * c;
+      g.sizeSellTotal[sz] += st * pr;
       g.barcodes.push(String(p.barcode||""));
     }
 
@@ -4736,10 +4744,18 @@
 
     groups.sort((a,b)=> (b.total - a.total) || (a.name||"").localeCompare(b.name||"","pt-BR",{sensitivity:"base"}));
 
+    // Com grade filtrada, "quantidade/custo/venda" tem que ser só daquela
+    // grade -- senão o KPI e a coluna Total ficam somando os outros
+    // tamanhos junto, que é exatamente o que o Kennedy reportou como
+    // "filtro não respeita a grade" (2026-08-06).
+    const qtyFor = g => size ? toNum(g.sizes[size]||0) : toNum(g.total);
+    const costTotalFor = g => size ? toNum(g.sizeCostTotal[size]||0) : toNum(g.costTotal);
+    const sellTotalFor = g => size ? toNum(g.sizeSellTotal[size]||0) : toNum(g.sellTotal);
+
     // KPIs
-    const totQty = groups.reduce((s,g)=>s+toNum(g.total),0);
-    const totCost = groups.reduce((s,g)=>s+toNum(g.costTotal),0);
-    const totSell = groups.reduce((s,g)=>s+toNum(g.sellTotal),0);
+    const totQty = groups.reduce((s,g)=>s+qtyFor(g),0);
+    const totCost = groups.reduce((s,g)=>s+costTotalFor(g),0);
+    const totSell = groups.reduce((s,g)=>s+sellTotalFor(g),0);
 
     const kQty = document.getElementById("st_kpi_qty");
     const kCost = document.getElementById("st_kpi_cost");
@@ -4749,7 +4765,15 @@
     if(kSell) kSell.textContent = fmtBRL(totSell);
 
     const hint = document.getElementById("stockReportHint");
-    if(hint) hint.textContent = `Mostrando ${groups.length} modelo(s). (Filtro por grade mostra somente modelos com estoque naquela grade.)`;
+    if(hint) hint.textContent = size
+      ? `Mostrando ${groups.length} modelo(s) com estoque em ${escapeHtml(size)}. Quantidade e valores abaixo são só dessa grade.`
+      : `Mostrando ${groups.length} modelo(s).`;
+
+    // Com grade filtrada, cada coluna G1..G5 mostra só a grade escolhida
+    // (as outras ficam em branco) e "Total"/custo/venda refletem só ela --
+    // antes exibiam a soma de todos os tamanhos mesmo filtrando por um só,
+    // o que o Kennedy reportou como o filtro "não respeitar a grade".
+    const cellFor = (g, sz) => (size && size !== sz) ? "" : toNum(g.sizes[sz]||0);
 
     // tabela
     body.innerHTML = groups.map(g=>{
@@ -4761,16 +4785,16 @@
           <td class="small">${escapeHtml(g.cat||"")}</td>
           <td class="small">${escapeHtml(g.fabric||"")}</td>
           <td class="small">${escapeHtml(g.color||"")}</td>
-          <td class="right">${toNum(g.sizes.G1||0)}</td>
-          <td class="right">${toNum(g.sizes.G2||0)}</td>
-          <td class="right">${toNum(g.sizes.G3||0)}</td>
-          <td class="right">${toNum(g.sizes.G4||0)}</td>
-          <td class="right">${toNum(g.sizes.G5||0)}</td>
-          <td class="right"><b>${toNum(g.total)}</b></td>
+          <td class="right">${cellFor(g,"G1")}</td>
+          <td class="right">${cellFor(g,"G2")}</td>
+          <td class="right">${cellFor(g,"G3")}</td>
+          <td class="right">${cellFor(g,"G4")}</td>
+          <td class="right">${cellFor(g,"G5")}</td>
+          <td class="right"><b>${qtyFor(g)}</b></td>
           <td class="right">${cu}</td>
           <td class="right">${vu}</td>
-          <td class="right">${fmtBRL(g.costTotal)}</td>
-          <td class="right">${fmtBRL(g.sellTotal)}</td>
+          <td class="right">${fmtBRL(costTotalFor(g))}</td>
+          <td class="right">${fmtBRL(sellTotalFor(g))}</td>
         </tr>
       `;
     }).join("");
