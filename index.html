@@ -1681,6 +1681,17 @@
         <button class="btn ok" id="btnExportNuvemshop">Baixar CSV pra Nuvemshop</button>
       </div>
     </div>
+
+    <div class="card">
+      <h2>Sincronização automática (Nuvemshop)</h2>
+      <div class="warnBox small">
+        Depois que a loja Nuvemshop estiver conectada, toda venda finalizada aqui já desconta o estoque lá também (produto por produto, pelo código de barras). Clique em "Sincronizar catálogo" sempre que adicionar produtos novos na Nuvemshop — é isso que ensina o sistema qual produto daqui corresponde a qual produto lá.
+      </div>
+      <div class="sep"></div>
+      <div class="btns">
+        <button class="btn ok" id="btnSyncNuvemshop">Sincronizar catálogo com Nuvemshop</button>
+      </div>
+    </div>
   </section>
 </main>
 </div>
@@ -5333,6 +5344,7 @@
       if(p) p.stock = Math.max(0, toNum(p.stock) - toNum(it.qty));
     }
     await loadStockMovesFromSupabase();
+    pushStockToNuvemshop(currentSale.items.map(it=>it.barcode));
 
     const sale = mapSaleFromDb({ ...saleRow, sale_items: currentSale.items.map(it=>({
       product_id: it.productId, name: it.name, cat: it.cat, fabric: it.fabric,
@@ -6351,6 +6363,30 @@
     URL.revokeObjectURL(url);
     toast("CSV gerado", `${db.products.length} produto(s) exportado(s), agrupados em ${groups.size} produto(s) na Nuvemshop (cor/tamanho viram variação).`);
   });
+
+  document.getElementById("btnSyncNuvemshop").addEventListener("click", async ()=>{
+    const btn = document.getElementById("btnSyncNuvemshop");
+    btn.disabled = true;
+    toast("Sincronizando...","Isso pode levar alguns segundos.");
+    const { data, error } = await sb.functions.invoke("nuvemshop-sync-catalog");
+    btn.disabled = false;
+    if(error || !data?.ok){
+      return toast("Falhou", data?.error || error?.message || "Não deu pra sincronizar com a Nuvemshop.");
+    }
+    toast("Sincronizado", `${data.casados} produto(s) casado(s) com a Nuvemshop. ${data.semCorrespondencia} produto(s) daqui ainda não estão cadastrados lá.`);
+  });
+
+  // Empurra o estoque atual pra Nuvemshop depois de uma venda -- sem
+  // bloquear a tela (a venda ja esta salva de verdade antes disso rodar).
+  // Se a Nuvemshop estiver fora do ar ou o produto ainda nao tiver sido
+  // sincronizado (ver btnSyncNuvemshop), so fica silencioso: a proxima
+  // venda do mesmo produto tenta de novo com o numero certo.
+  function pushStockToNuvemshop(barcodes){
+    const list = [...new Set(barcodes.filter(Boolean))];
+    if(!list.length) return;
+    sb.functions.invoke("nuvemshop-push-stock", { body: { barcodes: list } })
+      .catch(err => console.warn("nuvemshop-push-stock falhou:", err));
+  }
 
   document.getElementById("btnResetCounter").addEventListener("click", ()=>{
     const newStart = prompt("Iniciar contador em qual número? (ex: 1 para VF000001)", "1");
