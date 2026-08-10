@@ -4652,7 +4652,7 @@
     if(zebraDev){
       await imprimirFilaZebra();
     } else {
-      window.print();
+      imprimirViaPopup();
     }
   });
 
@@ -6507,6 +6507,55 @@
       body: JSON.stringify({ device: zebraDev, data: zpl })
     });
     if(!r.ok) throw new Error("Falha ao enviar ZPL");
+  }
+
+  function imprimirViaPopup(){
+    const area = document.getElementById("folha-impressao");
+    const etiquetas = Array.from(area.querySelectorAll(".etiqueta"));
+    if(!etiquetas.length) return;
+
+    /* Agrupa em linhas de 3 — cada linha vira uma "página" de 96×50mm */
+    const linhas = [];
+    for(let i=0; i<etiquetas.length; i+=3){
+      linhas.push(etiquetas.slice(i, Math.min(i+3, etiquetas.length)));
+    }
+
+    const css = `
+      @page{ size:96mm 50mm; margin:0; }
+      *{ box-sizing:border-box; margin:0; padding:0; }
+      body{ font-family:Arial,sans-serif; }
+      .linha{ width:96mm; height:50mm; display:flex; page-break-after:always; }
+      .linha:last-child{ page-break-after:auto; }
+      .etiqueta{ width:32mm; height:50mm; flex-shrink:0; display:flex; flex-direction:column; align-items:center; text-align:center; padding:2mm 1mm; position:relative; background:#fff; }
+      .eti-topo{ border:1px solid #000; width:90%; padding:2px 0; margin-bottom:3px; }
+      .eti-topo-txt{ font-family:Arial,sans-serif; font-weight:900; font-size:10px; text-transform:uppercase; letter-spacing:1px; line-height:1; color:#fff; -webkit-text-stroke:.5px black; }
+      .eti-plus{ font-size:6px; letter-spacing:2px; color:#000; margin-top:1px; font-weight:bold; }
+      .eti-tarja{ background:#000; color:#fff; font-weight:bold; font-size:9px; padding:1px 6px; margin-bottom:2px; }
+      .eti-barcode{ width:90%; height:28px; margin:2px 0 0; }
+      .eti-nome{ font-size:9px; font-weight:bold; text-transform:uppercase; max-width:100%; white-space:nowrap; overflow:hidden; }
+      .eti-ref{ font-size:8px; font-weight:bold; margin-bottom:2px; }
+      .eti-tam{ font-size:24px; font-weight:900; line-height:1; margin-top:auto; }
+      .crop-bl{ position:absolute; bottom:2px; left:2px; width:4px; height:4px; border-bottom:1px solid #000; border-left:1px solid #000; }
+      .crop-br{ position:absolute; bottom:2px; right:2px; width:4px; height:4px; border-bottom:1px solid #000; border-right:1px solid #000; }
+    `;
+
+    const corpo = linhas.map(ln =>
+      `<div class="linha">${ln.map(e => e.outerHTML).join('')}</div>`
+    ).join('');
+
+    const html = `<!DOCTYPE html><html><head><meta charset="UTF-8">
+<style>${css}</style></head><body>${corpo}
+<script>window.onload=function(){window.print();}<\/script></body></html>`;
+
+    const popup = window.open('','_blank','width=500,height=400');
+    if(!popup){
+      return toast("Popup bloqueado","Clique no ícone de popup na barra do Chrome e permita este site.");
+    }
+    popup.document.write(html);
+    popup.document.close();
+
+    /* Após imprimir, limpa a fila */
+    setTimeout(()=>{ area.innerHTML=""; }, 3000);
   }
 
   async function imprimirFilaZebra(){
