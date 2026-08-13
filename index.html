@@ -4806,6 +4806,20 @@
     }
   });
 
+  // Leitor de código de barras digita o código e manda um Enter no final.
+  // O PDV (sale_barcode) já tratava esse Enter desde sempre; aqui no
+  // Estoque não tratava nada — o código entrava no campo, o preview
+  // aparecia, e o Enter caía no vazio. Daí "no caixa dá certo e aqui
+  // não": tinha que largar o leitor e clicar em "Lançar entrada" no
+  // mouse a cada peça.
+  document.getElementById("s_barcode").addEventListener("keydown", (e)=>{
+    if(e.key !== "Enter") return;
+    e.preventDefault();
+    const btn = document.getElementById("btnStockIn");
+    if(btn.disabled) return;   // lançamento anterior ainda em andamento
+    btn.click();
+  });
+
   document.getElementById("btnStockIn").addEventListener("click", async ()=>{
     const code = document.getElementById("s_barcode").value.trim();
     const qty = Math.max(1, Math.floor(toNum(document.getElementById("s_qty").value)));
@@ -4821,14 +4835,21 @@
     btn.disabled = false;
     if(result.error) return toast("Falhou", result.error);
 
-    toast("Entrada lançada",`${p.name} +${qty} no estoque.`);
+    toast("Entrada lançada",`${p.name} +${qty} no estoque (agora ${toNum(p.stock)}).`);
     document.getElementById("s_barcode").value="";
     document.getElementById("s_qty").value="1";
+    // Custo é limpo de propósito: se ficasse preenchido, a próxima peça
+    // bipada teria o custo sobrescrito silenciosamente com o valor da
+    // peça anterior. A observação, ao contrário, vale pro lote inteiro
+    // (ex: "reposição fornecedor X") e fica — senão teria que redigitar
+    // a cada bipada.
     document.getElementById("s_cost").value="";
-    document.getElementById("s_note").value="";
-    document.getElementById("stockPreview").textContent = "Bipe um produto para ver detalhes.";
+    document.getElementById("stockPreview").textContent = "Bipe o próximo produto.";
     renderStock();
     renderHome();
+    // Volta o foco pro campo do leitor: sem isso, bipar em sequência
+    // exigia clicar no campo de novo a cada peça.
+    document.getElementById("s_barcode").focus();
   });
 
   document.getElementById("btnClearStock").addEventListener("click", ()=>{
