@@ -262,4 +262,23 @@ Kennedy reportou que vários produtos (ex: toda a grade "Chemise Girassol", ~58 
 
 **Corrigido**: `loadProductsFromSupabase()` agora pagina em blocos de 1000 via `.range(from, from+999)` num loop até a página voltar com menos de 1000 linhas — carrega o catálogo inteiro, não importa o tamanho. Testado por inspeção de código (lógica de paginação é padrão/direta); Kennedy confirmou o total de 1150 produtos batendo com a teoria antes do fix ir pro ar. Publicado direto no `main` (bug real afetando produção, sem precisar de branch separada pra uma correção desse tamanho).
 
+## Etiquetas: busca por grade inteira (2026-08-13)
+
+**No ar.** Reclamação direta do Kennedy: com cor virando atributo estruturado (2026-08-06), a aba Etiquetas ficou impraticável — "ficou péssimo". Três problemas no mesmo lugar:
+
+1. A busca listava **1 linha por cor×tamanho** (a "Blusa Magnólia" em 4 cores = 20 linhas achatadas) e cortava em `.slice(0, 20)` **em silêncio** — daí o sintoma "pesquisa pelo nome da blusa e não mostra todas que têm". Isso somava com o bug de 1000 linhas da seção anterior (dois cortes silenciosos empilhados).
+2. Só dava pra adicionar **um tamanho por vez**: selecionar produto → digitar quantidade → adicionar → repetir. Pra 4 cores × 5 tamanhos eram 20 ciclos.
+3. Como a busca por nome falhava, o fluxo real dele virou: ir na aba Estoque, achar o barcode daquela peça específica, voltar e colar o barcode na Etiquetas.
+
+**Redesenhado**: a busca agrupa por **modelo + cor** (mesma chave conceitual do relatório de estoque, e o inverso do CSV da Nuvemshop, que tira cor da chave de propósito). Cada cor vira um card com uma caixinha de quantidade **por grade** (G1–G5, ordenadas por `ETI_SIZE_ORDER`, tamanho fora dessa lista vai pro fim) mostrando o estoque atual embaixo de cada uma. Dá pra preencher várias cores e vários tamanhos e mandar tudo pra fila num clique só. O botão "Adicionar" mostra o total ao vivo (`+ Adicionar 24 etiqueta(s) na fila`) e as caixinhas preenchidas ganham destaque rosa.
+
+- **"Usar estoque"** (um por card + um global "Preencher com o estoque"): preenche cada grade com a quantidade que existe hoje no estoque — uma etiqueta por peça é o caso mais comum ao receber mercadoria, que era exatamente o trabalho manual que ele reclamou. Tamanho com estoque 0 fica **em branco**, não "0" (menos ruído visual).
+- **O corte de resultados agora é sempre anunciado** (`Mostrando 40 de 87 cores encontradas — refine a busca`). O limite subiu de 20 itens achatados pra 40 **grupos de cor** (≈200 produtos), e o princípio é o que importa: nunca mais cortar em silêncio, que foi a causa raiz das duas reclamações de "sumiu" desta semana.
+- Busca também casa por SKU agora (antes só nome/barcode/cor).
+- O **design da etiqueta em si não foi tocado** — `etiCriarEtiqueta()` é o mesmo HTML/JsBarcode de antes, extraído numa função pra ser chamado em lote. A integração Zebra Browser Print (feita em outra sessão, commits `f6b4014`/`7a417c0`/`5a3c218`) e o `imprimirViaPopup()` continuam intactos, consomem a fila do mesmo jeito.
+- Removido o bloco de "produto selecionado" (`eti_selNome`/`eti_selTam`/`eti_qtd`) e o CSS `.eti-item-lista`, que ficaram sem uso.
+- **Testado no navegador sem login** (`db.products` fake, `loginGate` escondido via console): agrupamento por cor, ordem das grades, contador ao vivo, limpeza dos campos após adicionar, "Usar estoque" por card (não vaza pros outros cards) e global — total bateu com a soma do estoque em todos os casos. Sem overflow horizontal em 375px (grade quebra em duas linhas).
+
+**Ainda pendente, reclamado na mesma conversa (não mexido ainda, ele pediu etiqueta primeiro):** entrada de estoque por leitor de código de barras. Hoje é bipar → lançar → bipar → lançar, uma peça por vez; ele quer bipar em sequência acumulando numa lista (ou lançar a grade inteira de uma cor de uma vez, igual ficou na Etiquetas) e conferir/confirmar o lote no final. Ele também relatou que "não está dando certo de lançar a peça pelo leitor" no Estoque, enquanto no PDV o mesmo leitor funciona — **investigar antes de redesenhar**, pode ser bug real e não só ergonomia.
+
 **Nota pra próxima sessão**: os outros loaders (`clients`, `vendedores`, `categorias`, `v_contas`) têm o mesmo padrão sem `.range()` — não corrigidos agora porque nenhum está perto de 1000 linhas (a loja é pequena, 3 usuários), mas é o mesmo bug latente se algum desses crescer muito no futuro. `sales`/`stock_moves`/`movimentacoes` já tinham `.limit()` deliberado (mostram "recentes", não "tudo") — não é a mesma categoria de bug.
