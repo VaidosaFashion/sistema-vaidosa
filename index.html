@@ -2271,16 +2271,33 @@
     // embed de colors(nome) pelo color_id — mesmo padrão de sale_items(*)
     // em loadSalesFromSupabase, só que aqui é um embed pra FK simples, não
     // pra tabela filha.
-    const { data, error } = await sb.from("products").select("*, colors(nome)").order("created_at", { ascending:false });
-    if(error){
-      toast("Erro ao carregar produtos", error.message);
-      return;
+    //
+    // Paginado em blocos de 1000: o Supabase corta a resposta em 1000
+    // linhas por padrão quando a consulta não pede range nenhum — sem
+    // isso, produto cadastrado depois que o catálogo passa de 1000 linhas
+    // simplesmente não carrega (não é apagado, só nunca chega no
+    // navegador), e some da busca/estoque/PDV sem nenhum erro visível.
+    const pageSize = 1000;
+    let from = 0;
+    const rows = [];
+    while(true){
+      const { data, error } = await sb.from("products")
+        .select("*, colors(nome)")
+        .order("created_at", { ascending:false })
+        .range(from, from + pageSize - 1);
+      if(error){
+        toast("Erro ao carregar produtos", error.message);
+        return;
+      }
+      rows.push(...data);
+      if(data.length < pageSize) break;
+      from += pageSize;
     }
     // price_atacado/price_varejo/color_id são snake_case ou precisam de
     // achatamento do embed — mapeados aqui pro camelCase que o resto do
     // app usa (o resto das colunas de products coincide 1:1, por isso não
     // precisou de mapeamento até agora).
-    db.products = data.map(p => ({
+    db.products = rows.map(p => ({
       ...p, priceAtacado: p.price_atacado, priceVarejo: p.price_varejo,
       colorId: p.color_id, colorName: p.colors?.nome || ""
     }));
