@@ -419,7 +419,7 @@
        igual ao ETIQUETAS.HTML original, só a "moldura" ao redor (busca,
        botões) segue os estilos do sistema principal. ===== */
     :root{
-      --w-etiqueta: 32mm;
+      --w-etiqueta: 33mm;
       --h-etiqueta: 50mm;
     }
     .eti-item-lista{
@@ -430,9 +430,9 @@
     .eti-item-lista:hover{border-color:var(--accent);background:#fdf2f8}
     #folha-impressao{
       background:#fff;
-      width:104mm;
+      width:99mm;
       min-height:200mm;
-      padding:0 1mm;
+      padding:0;
       box-shadow:0 0 20px rgba(0,0,0,.15);
       display:grid;
       grid-template-columns:repeat(3,1fr);
@@ -465,14 +465,27 @@
     /* Imprime só a fila de etiquetas, esconde o resto do app inteiro
        (sidebar, outras abas) — independe de qual aba está com .hide */
     @media print{
+      @page{ size: 99mm auto; margin: 0; }
       body *{ visibility:hidden; }
       #folha-impressao, #folha-impressao *{ visibility:visible; }
       #folha-impressao{
         position:absolute; top:0; left:0;
-        box-shadow:none; width:100%; margin:0; padding:0;
+        box-shadow:none; width:96mm; margin:0; padding:0;
       }
       .etiqueta{ border:none; page-break-inside:avoid; }
     }
+
+    /* Badge status impressora Zebra */
+    #zebraStatusBadge{
+      display:inline-flex;align-items:center;gap:6px;
+      padding:4px 12px;border-radius:20px;font-size:11px;font-weight:600;
+      border:1px solid transparent;margin-bottom:12px;transition:all .3s;
+    }
+    #zebraStatusBadge.neutral{background:#f1f5f9;color:#64748b;border-color:#e2e8f0}
+    #zebraStatusBadge.ok    {background:rgba(16,185,129,.12);color:#059669;border-color:rgba(5,150,105,.25)}
+    #zebraStatusBadge.warn  {background:rgba(245,158,11,.12);color:#b45309;border-color:rgba(180,83,9,.2)}
+    #zebraStatusBadge .dot  {width:7px;height:7px;border-radius:50%;background:currentColor}
+    #zebraStatusBadge.ok .dot{animation:blink 2.2s ease-in-out infinite}
   </style>
 </head>
 <body>
@@ -697,6 +710,13 @@
   <section id="tab-etiquetas" class="grid cols2 hide">
     <div class="card">
       <h2>Gerador de etiquetas (Zebra)</h2>
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:4px">
+        <div id="zebraStatusBadge" class="neutral">
+          <span class="dot"></span>
+          <span id="zebraStatusTxt">Verificando impressora...</span>
+        </div>
+        <button class="btn" id="btnZebraReconectar" style="font-size:11px;padding:3px 10px">Reconectar</button>
+      </div>
       <div class="warnBox small" style="margin-bottom:10px">
         Busque o produto, ajuste a quantidade e adicione na fila. Imprima direto num rolo de 32×50mm (3 colunas).
       </div>
@@ -732,7 +752,7 @@
       <div class="sep"></div>
 
       <div class="btns">
-        <button class="btn ok" id="btnEtiPrint" style="padding:14px;font-size:15px">🖨️ Imprimir (Ctrl+P)</button>
+        <button class="btn ok" id="btnEtiPrint" style="padding:14px;font-size:15px">🖨️ Imprimir</button>
         <button class="btn bad" id="btnEtiClear">Limpar fila</button>
       </div>
     </div>
@@ -4642,11 +4662,15 @@
     toast("Adicionado", `${qtd} etiqueta(s) de ${p.name} na fila.`);
   });
 
-  document.getElementById("btnEtiPrint").addEventListener("click", ()=>{
+  document.getElementById("btnEtiPrint").addEventListener("click", async ()=>{
     if(!document.getElementById("folha-impressao").children.length){
       return toast("Fila vazia","Adicione pelo menos uma etiqueta antes de imprimir.");
     }
-    window.print();
+    if(zebraDev){
+      await imprimirFilaZebra();
+    } else {
+      imprimirViaPopup();
+    }
   });
 
   document.getElementById("btnEtiClear").addEventListener("click", ()=>{
@@ -6416,6 +6440,173 @@
   });
 
   /* =========================
+     ZEBRA BROWSER PRINT — GC420T
+     Requer "Zebra Browser Print" instalado no Mac (porta 9100).
+     Sem ele cai no fallback window.print().
+  ========================= */
+  let zebraDev = null;
+
+  function zebraSetBadge(estado, texto){
+    const badge = document.getElementById("zebraStatusBadge");
+    const txt   = document.getElementById("zebraStatusTxt");
+    if(!badge) return;
+    badge.className = estado;
+    txt.textContent = texto;
+  }
+
+  async function detectZebra(){
+    zebraSetBadge("neutral","Verificando impressora...");
+    try{
+      const ctrl = new AbortController();
+      const timer = setTimeout(()=>ctrl.abort(), 3000);
+      const r = await fetch("http://localhost:9100/available",{ signal: ctrl.signal });
+      clearTimeout(timer);
+      const d = await r.json();
+      const lista = d.printer || [];
+      /* Prefere impressora com "zebra" ou "gc420" no nome; senão pega a primeira */
+      const found = lista.find(p=>/zebra|gc420|zd[0-9]/i.test(p.name||"")) || lista[0];
+      if(found){
+        zebraDev = found;
+        zebraSetBadge("ok", zebraDev.name || "Zebra conectada");
+      } else {
+        throw new Error("nenhuma impressora listada");
+      }
+    } catch {
+      zebraDev = null;
+      zebraSetBadge("warn","Zebra não detectada — usando impressão padrão");
+    }
+  }
+
+  document.getElementById("btnZebraReconectar")
+    .addEventListener("click", ()=>detectZebra());
+
+  function gerarZPL(p, qtd){
+    /* 203 DPI ≈ 8 dots/mm | etiqueta 32×50mm = 256×400 dots */
+    const bc   = String(p.barcode||"0000").replace(/[\^~]/g,"");
+    const nome = String(p.name||"").slice(0,18).toUpperCase().replace(/[\^~]/g,"");
+    const sku  = String(p.sku||p.barcode||"000").replace(/[\^~]/g,"");
+    const tam  = String(p.size||"").toUpperCase().replace(/[\^~]/g,"");
+    return `^XA
+^PW256
+^LL400
+^LH0,0
+^CI28
+
+^FO5,5^GB246,38,2^FS
+^FO8,8^A0N,14,12^FH^FDVAIDOSA^FS
+^FO8,23^A0N,12,10^FH^FDFASHION^FS
+
+^FO55,46^A0N,9,8^FH^FDPLUS SIZE^FS
+
+^FO10,59^GB236,20,20^FS
+^FO10,62^FR^A0N,14,13^FH^FD     VAIDOSA^FS
+
+^FO18,87^BY1,2,30^BCN,,Y,N^FD${bc}^FS
+
+^FO10,132^A0N,12,10^FH^FD${nome}^FS
+^FO10,147^A0N,10,9^FH^FDREF: ${sku}^FS
+
+^FO60,288^A0N,88,78^FH^FD${tam}^FS
+
+^FO5,394^GB8,1,1^FS
+^FO5,392^GB1,8,1^FS
+^FO243,394^GB8,1,1^FS
+^FO250,392^GB1,8,1^FS
+
+^PQ${qtd}
+^XZ`;
+  }
+
+  async function enviarZPL(zpl){
+    const r = await fetch("http://localhost:9100/write",{
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({ device: zebraDev, data: zpl })
+    });
+    if(!r.ok) throw new Error("Falha ao enviar ZPL");
+  }
+
+  function imprimirViaPopup(){
+    const area = document.getElementById("folha-impressao");
+    const etiquetas = Array.from(area.querySelectorAll(".etiqueta"));
+    if(!etiquetas.length) return;
+
+    /* Agrupa em linhas de 3 — cada linha vira uma "página" de 96×50mm */
+    const linhas = [];
+    for(let i=0; i<etiquetas.length; i+=3){
+      linhas.push(etiquetas.slice(i, Math.min(i+3, etiquetas.length)));
+    }
+
+    const css = `
+      @page{ size:99mm 50mm; margin:0; }
+      *{ box-sizing:border-box; margin:0; padding:0; }
+      body{ font-family:Arial,sans-serif; }
+      .linha{ width:99mm; height:50mm; display:flex; page-break-after:always; }
+      .linha:last-child{ page-break-after:auto; }
+      .etiqueta{ width:33mm; height:50mm; flex-shrink:0; display:flex; flex-direction:column; align-items:center; text-align:center; padding:2mm 1mm; position:relative; background:#fff; }
+      .eti-topo{ border:1px solid #000; width:90%; padding:2px 0; margin-bottom:3px; }
+      .eti-topo-txt{ font-family:Arial,sans-serif; font-weight:900; font-size:10px; text-transform:uppercase; letter-spacing:1px; line-height:1; color:#fff; -webkit-text-stroke:.5px black; }
+      .eti-plus{ font-size:6px; letter-spacing:2px; color:#000; margin-top:1px; font-weight:bold; }
+      .eti-tarja{ background:#000; color:#fff; font-weight:bold; font-size:9px; padding:1px 6px; margin-bottom:2px; }
+      .eti-barcode{ width:90%; height:28px; margin:2px 0 0; }
+      .eti-nome{ font-size:9px; font-weight:bold; text-transform:uppercase; max-width:100%; white-space:nowrap; overflow:hidden; }
+      .eti-ref{ font-size:8px; font-weight:bold; margin-bottom:2px; }
+      .eti-tam{ font-size:24px; font-weight:900; line-height:1; margin-top:auto; }
+      .crop-bl{ position:absolute; bottom:2px; left:2px; width:4px; height:4px; border-bottom:1px solid #000; border-left:1px solid #000; }
+      .crop-br{ position:absolute; bottom:2px; right:2px; width:4px; height:4px; border-bottom:1px solid #000; border-right:1px solid #000; }
+    `;
+
+    const corpo = linhas.map(ln =>
+      `<div class="linha">${ln.map(e => e.outerHTML).join('')}</div>`
+    ).join('');
+
+    const html = `<!DOCTYPE html><html><head><meta charset="UTF-8">
+<style>${css}</style></head><body>${corpo}
+<script>window.onload=function(){window.print();}<\/script></body></html>`;
+
+    const popup = window.open('','_blank','width=500,height=400');
+    if(!popup){
+      return toast("Popup bloqueado","Clique no ícone de popup na barra do Chrome e permita este site.");
+    }
+    popup.document.write(html);
+    popup.document.close();
+
+    /* Após imprimir, limpa a fila */
+    setTimeout(()=>{ area.innerHTML=""; }, 3000);
+  }
+
+  async function imprimirFilaZebra(){
+    const etiquetas = document.getElementById("folha-impressao").querySelectorAll(".etiqueta");
+
+    /* Agrupa itens consecutivos iguais para usar ^PQ em vez de N jobs */
+    const grupos = [];
+    etiquetas.forEach(el=>{
+      const n = el.querySelector(".eti-nome")?.textContent||"";
+      const t = el.querySelector(".eti-tam" )?.textContent||"";
+      const r = (el.querySelector(".eti-ref")?.textContent||"").replace("REF: ","");
+      const last = grupos[grupos.length-1];
+      if(last && last.n===n && last.t===t){ last.qtd++; }
+      else grupos.push({n,t,r,qtd:1});
+    });
+
+    let ok=0, erros=0;
+    for(const g of grupos){
+      const prod = db.products.find(p=>
+        String(p.sku||"")===g.r || String(p.barcode||"")===g.r
+      ) || { name:g.n, sku:g.r, barcode:g.r, size:g.t };
+      try{
+        await enviarZPL(gerarZPL(prod, g.qtd));
+        ok += g.qtd;
+      } catch{ erros += g.qtd; }
+    }
+
+    if(!erros) toast("Impresso",""+ok+" etiqueta(s) enviadas à Zebra.");
+    else       toast("Atenção",""+ok+" ok, "+erros+" com erro. Verifique a impressora.");
+
+    document.getElementById("folha-impressao").innerHTML = "";
+  }
+
+  /* =========================
      INIT (chamado só depois do login, ver enterApp())
   ========================= */
   async function initApp(){
@@ -6443,6 +6634,7 @@
     }
 
     (async ()=>{ try{ await initAutoBackup(); }catch{} })();
+    detectZebra();
   }
 </script>
 
