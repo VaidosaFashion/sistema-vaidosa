@@ -2222,6 +2222,20 @@
   }
   function escapeHtml(s){ return String(s??"").replace(/[&<>"']/g,m=>({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;" }[m])); }
 
+  // Formata data pt-BR SEM deslocar o dia por fuso. Colunas DATE do
+  // Postgres (ex: sale_payments.paid_on) chegam como "2026-08-01", e
+  // new Date("2026-08-01") é meia-noite UTC — num fuso atrás de UTC,
+  // como o do Brasil, isso volta pro dia 31/07 ao ler em hora local.
+  // Mesmo problema já documentado em salesEntradasDoMes().
+  function fmtDataBR(v){
+    if(!v) return "";
+    const s = String(v);
+    const m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if(m) return `${m[3]}/${m[2]}/${m[1]}`;
+    const d = new Date(s);
+    return isNaN(d) ? "" : d.toLocaleDateString("pt-BR");
+  }
+
   // Versão curta e sem acento do nome da cor, pra encaixar no SKU auto-gerado
   // (ex: "Azul Marinho" -> "AZULMA").
   function asciiUpper(s){
@@ -2281,6 +2295,37 @@
 
   let db = loadDB();
   let settings = loadSettings();
+
+  // Logo em dataURL pro cabeçalho do PDF (jsPDF não aceita URL, precisa
+  // do binário). Carregada uma vez no início; se falhar, o PDF cai num
+  // cabeçalho de texto sem quebrar nada.
+  let logoDataUrl = null;
+  function preloadLogoParaPdf(){
+    const img = new Image();
+    img.onload = ()=>{
+      try{
+        // Reduz pra ~320px e achata em JPEG sobre branco. O PNG original
+        // (1218px, com transparência) sozinho deixava cada recibo com
+        // ~270KB — o jsPDF embute PNG com alfa praticamente sem
+        // compressão. O fundo do recibo é branco de qualquer forma, e
+        // no tamanho impresso (128pt) 320px passa de 180 DPI: fica
+        // idêntico na tela e no papel, com uma fração do peso (o PDF é
+        // mandado por WhatsApp).
+        const maxW = 320;
+        const escala = Math.min(1, maxW / img.naturalWidth);
+        const cv = document.createElement("canvas");
+        cv.width = Math.round(img.naturalWidth * escala);
+        cv.height = Math.round(img.naturalHeight * escala);
+        const ctx = cv.getContext("2d");
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(0, 0, cv.width, cv.height);
+        ctx.drawImage(img, 0, 0, cv.width, cv.height);
+        logoDataUrl = cv.toDataURL("image/jpeg", 0.92);
+      }catch(e){ logoDataUrl = null; }
+    };
+    img.src = "assets/logo.png";
+  }
+  preloadLogoParaPdf();
 
   /* =========================
      PRODUTOS — Supabase (Step 1, primeiro módulo migrado)
@@ -5938,213 +5983,265 @@
       inst = sale.installments ? (sale.installments + "x") : "";
     }
 
-    const pageWidth = 595;
-    let y = 50;
+    /* ─── Layout ────────────────────────────────────────────────
+       Recibo em tabela de verdade: cada item vira uma linha com
+       Cor e Código (barcode), que antes não apareciam em lugar
+       nenhum — a cor porque nem existia como campo quando esse PDF
+       foi escrito, e o código porque nunca foi incluído.        */
+    const M = 40, R = 555, PAGE_W = 595, PAGE_H = 842;
+    const ACCENT = [184, 39, 108];   // --accent #b8276c
+    const INK    = [34, 34, 34];
+    const MUTED  = [120, 120, 120];
+    const LINE   = [222, 222, 222];
+    const ZEBRA  = [250, 245, 248];
 
-    // ═══════════════════════════════════════
-    // CABEÇALHO PROFISSIONAL
-    // ═══════════════════════════════════════
-    doc.setLineWidth(1.5);
-    doc.line(40, y, 555, y); y+=2;
-    doc.line(40, y, 555, y); y+=18;
+    const money = v => toNum(v).toLocaleString("pt-BR", { minimumFractionDigits:2, maximumFractionDigits:2 });
 
-    doc.setFont("helvetica","bold");
-    doc.setFontSize(18);
-    const empresaNome = "VAIDOSA FASHION PLUS";
-    const empresaWidth = doc.getTextWidth(empresaNome);
-    doc.text(empresaNome, (pageWidth - empresaWidth) / 2, y); y+=14;
+    // Trunca com reticências pra nunca vazar da coluna.
+    function fit(txt, maxW){
+      txt = String(txt == null ? "" : txt);
+      if(doc.getTextWidth(txt) <= maxW) return txt;
+      while(txt.length > 1 && doc.getTextWidth(txt + "...") > maxW) txt = txt.slice(0, -1);
+      return txt + "...";
+    }
 
-    doc.setFont("helvetica","normal");
-    doc.setFontSize(10);
-    const slogan = "Moda Plus Size - Tamanhos G1 a G5";
-    const sloganWidth = doc.getTextWidth(slogan);
-    doc.text(slogan, (pageWidth - sloganWidth) / 2, y); y+=12;
+    // Cor não é gravada em sale_items (o snapshot da venda é anterior
+    // ao campo de cor) — busca no cadastro pelo id do produto, com o
+    // barcode como segunda tentativa.
+    function corDoItem(it){
+      if(it.colorName) return it.colorName;
+      const p = db.products.find(x =>
+        (it.productId && x.id === it.productId) ||
+        (it.barcode && String(x.barcode) === String(it.barcode))
+      );
+      return p?.colorName || "";
+    }
 
-    doc.setLineWidth(1.5);
-    doc.line(40, y, 555, y); y+=2;
-    doc.line(40, y, 555, y); y+=20;
+    // Colunas da tabela de itens (x de início; valores monetários
+    // são alinhados à direita no x final).
+    const COL = { num:M, prod:M+20, cor:250, tam:326, cod:360, qtd:445, unit:495, total:R };
 
-    // Tipo de documento
-    doc.setFont("helvetica","bold");
-    doc.setFontSize(14);
-    const tipoDoc = isOrcamento ? "ORÇAMENTO" : "RECIBO DE VENDA";
-    const numeroDoc = sale?.id ? ` Nº ${sale.id.slice(-6).toUpperCase()}` : "";
-    const tituloCompleto = tipoDoc + numeroDoc;
-    const tituloWidth = doc.getTextWidth(tituloCompleto);
-    doc.text(tituloCompleto, (pageWidth - tituloWidth) / 2, y); y+=20;
+    let y = 46;
 
-    // ═══════════════════════════════════════
-    // INFORMAÇÕES DO DOCUMENTO
-    // ═══════════════════════════════════════
-    doc.setFont("helvetica","normal");
-    doc.setFontSize(10);
-    
-    doc.text(`Data: ${new Date(saleData.date).toLocaleString("pt-BR")}`, 40, y); y+=14;
-    
-    if(c){
-      doc.text(`Cliente: ${c.name}`, 40, y); y+=14;
-      if(c.cpf) { doc.text(`CPF: ${c.cpf}`, 40, y); y+=14; }
-      if(c.cnpj) { doc.text(`CNPJ: ${c.cnpj}`, 40, y); y+=14; }
-      if(c.phone) { doc.text(`Telefone: ${c.phone}`, 40, y); y+=14; }
+    /* ─── Cabeçalho ─── */
+    if(logoDataUrl){
+      const lw = 128, lh = lw * (629/1218);   // proporção real do arquivo
+      doc.addImage(logoDataUrl, "JPEG", M, y - 6, lw, lh);
     } else {
-      doc.text(`Cliente: Não informado`, 40, y); y+=14;
+      doc.setFont("helvetica","bold"); doc.setFontSize(16);
+      doc.setTextColor(...ACCENT);
+      doc.text("VAIDOSA FASHION PLUS", M, y + 14);
     }
+    doc.setFont("helvetica","normal"); doc.setFontSize(8);
+    doc.setTextColor(...MUTED);
+    doc.text("Moda Plus Size | Tamanhos G1 ao G5", M, y + 52);
 
-    if(v){
-      doc.text(`Vendedor(a): ${v.name}`, 40, y); y+=14;
+    const tipoDoc = isOrcamento ? "ORÇAMENTO" : "RECIBO DE VENDA";
+    doc.setFont("helvetica","bold"); doc.setFontSize(15);
+    doc.setTextColor(...INK);
+    doc.text(tipoDoc, R, y + 8, { align:"right" });
+
+    doc.setFont("helvetica","normal"); doc.setFontSize(9);
+    doc.setTextColor(...MUTED);
+    let cabY = y + 24;
+    if(sale?.id){
+      doc.text(`Nº ${sale.id.slice(-6).toUpperCase()}`, R, cabY, { align:"right" });
+      cabY += 12;
     }
+    doc.text(new Date(saleData.date).toLocaleString("pt-BR"), R, cabY, { align:"right" });
 
-    const paymentLabel = saleData.pay || "Não informado";
-    doc.text(`Forma de Pagamento: ${paymentLabel}${inst?(" " + inst):""}`, 40, y); y+=18;
+    y += 66;
+    doc.setDrawColor(...ACCENT); doc.setLineWidth(2);
+    doc.line(M, y, R, y);
+    y += 22;
 
-    // Linha separadora
-    doc.setLineWidth(0.5);
-    doc.setDrawColor(180, 180, 180);
-    doc.line(40, y, 555, y); y+=16;
+    /* ─── Cliente / Vendedora ─── */
+    const meio = M + 260;
+    doc.setFont("helvetica","bold"); doc.setFontSize(8);
+    doc.setTextColor(...ACCENT);
+    doc.text("CLIENTE", M, y);
+    doc.text("ATENDIMENTO", meio, y);
+    y += 13;
 
-    // ═══════════════════════════════════════
-    // ITENS COMPRADOS
-    // ═══════════════════════════════════════
-    doc.setFont("helvetica","bold");
-    doc.setFontSize(11);
-    doc.text("ITENS COMPRADOS:", 40, y); y+=16;
+    doc.setTextColor(...INK);
+    doc.setFont("helvetica","bold"); doc.setFontSize(10);
+    doc.text(fit(c?.name || "Não informado", 240), M, y);
+    doc.text(fit(v?.name || "Não informado", 230), meio, y);
+    y += 13;
 
-    doc.setFont("helvetica","normal");
-    doc.setFontSize(10);
-    
+    doc.setFont("helvetica","normal"); doc.setFontSize(9);
+    doc.setTextColor(...MUTED);
+    let yEsq = y, yDir = y;
+    if(c?.cpf)   { doc.text(`CPF: ${c.cpf}`,   M, yEsq); yEsq += 12; }
+    if(c?.cnpj)  { doc.text(`CNPJ: ${c.cnpj}`, M, yEsq); yEsq += 12; }
+    if(c?.phone) { doc.text(`Tel: ${c.phone}`, M, yEsq); yEsq += 12; }
+    if(c?.city)  { doc.text(fit(c.city, 240),  M, yEsq); yEsq += 12; }
+
+    const formaPg = (saleData.pay || "Não informado") + (inst ? ` ${inst}` : "");
+    doc.text(`Pagamento: ${fit(formaPg, 180)}`, meio, yDir); yDir += 12;
+    if(saleData.channel){ doc.text(`Canal: ${saleData.channel}`, meio, yDir); yDir += 12; }
+    if(saleData.kind && saleData.kind !== "Venda"){ doc.text(`Tipo: ${saleData.kind}`, meio, yDir); yDir += 12; }
+
+    y = Math.max(yEsq, yDir) + 10;
+
+    /* ─── Tabela de itens ─── */
+    function cabecalhoTabela(){
+      doc.setFillColor(...ACCENT);
+      doc.rect(M, y, R - M, 18, "F");
+      doc.setFont("helvetica","bold"); doc.setFontSize(8);
+      doc.setTextColor(255, 255, 255);
+      doc.text("#",        COL.num + 2,  y + 12);
+      doc.text("PRODUTO",  COL.prod,     y + 12);
+      doc.text("COR",      COL.cor,      y + 12);
+      doc.text("TAM",      COL.tam,      y + 12);
+      doc.text("CÓDIGO",   COL.cod,      y + 12);
+      doc.text("QTD",      COL.qtd,      y + 12, { align:"right" });
+      doc.text("UNIT.",    COL.unit,     y + 12, { align:"right" });
+      doc.text("TOTAL",    COL.total - 2, y + 12, { align:"right" });
+      y += 18;
+    }
+    cabecalhoTabela();
+
+    const LIN_H = 17;
     saleData.items.forEach((it, idx)=>{
-      const itemNum = `${idx + 1}.`;
-      const fabric = it.fabric ? ` ${it.fabric}` : "";
-      const itemName = `${it.name} (${it.size})${fabric}`;
-      const qtd = `${it.qty}x`;
-      const priceUnit = fmtBRL(it.price);
-      const priceTotal = fmtBRL(toNum(it.price)*toNum(it.qty));
-      
-      // Linha 1: Número e nome do item
-      doc.text(itemNum, 40, y);
-      doc.text(itemName, 55, y); y+=14;
-      
-      // Linha 2: Quantidade e preços com pontilhado
-      const qtyPriceText = `   ${qtd} ${priceUnit}`;
-      doc.text(qtyPriceText, 40, y);
-      
-      // Calcular posição do preço total (alinhado à direita)
-      const totalWidth = doc.getTextWidth(priceTotal);
-      const totalX = 555 - totalWidth;
-      
-      // Desenhar linha pontilhada
-      const dotStartX = 40 + doc.getTextWidth(qtyPriceText) + 10;
-      const dotEndX = totalX - 10;
-      doc.setLineDash([2, 3]);
-      doc.setDrawColor(150, 150, 150);
-      doc.line(dotStartX, y - 3, dotEndX, y - 3);
-      doc.setLineDash([]);
-      
-      doc.text(priceTotal, totalX, y);
-      y+=18;
-      
-      if(y>740){ doc.addPage(); y=48; }
-    });
-
-    y+=6;
-    doc.setLineWidth(0.5);
-    doc.setDrawColor(180, 180, 180);
-    doc.line(40, y, 555, y); y+=16;
-
-    // ═══════════════════════════════════════
-    // RESUMO FINANCEIRO
-    // ═══════════════════════════════════════
-    doc.setFont("helvetica","normal");
-    doc.setFontSize(10);
-
-    const subtotalLabel = "Subtotal";
-    const subtotalValue = fmtBRL(saleData.subtotal);
-    doc.text(subtotalLabel, 350, y);
-    doc.text(subtotalValue, 555 - doc.getTextWidth(subtotalValue), y); y+=14;
-
-    if(toNum(saleData.discount) > 0){
-      const descontoLabel = "Desconto";
-      const descontoValue = fmtBRL(saleData.discount);
-      doc.text(descontoLabel, 350, y);
-      doc.text(descontoValue, 555 - doc.getTextWidth(descontoValue), y); y+=14;
-    }
-
-    y+=6;
-    doc.setFont("helvetica","bold");
-    doc.setFontSize(12);
-    const totalLabel = "TOTAL";
-    const totalValue = fmtBRL(saleData.totalBruto);
-    doc.text(totalLabel, 350, y);
-    doc.text(totalValue, 555 - doc.getTextWidth(totalValue), y); y+=20;
-
-    doc.setLineWidth(0.5);
-    doc.setDrawColor(180, 180, 180);
-    doc.line(40, y, 555, y); y+=16;
-
-    // ═══════════════════════════════════════
-    // STATUS DE PAGAMENTO (só pra vendas finalizadas)
-    // ═══════════════════════════════════════
-    if(!isOrcamento && sale){
-      doc.setFont("helvetica","bold");
-      doc.setFontSize(11);
-      doc.text("STATUS DO PAGAMENTO:", 40, y); y+=16;
-
-      const status = getSalePaymentStatus(sale);
-      const totalPago = sale.payments ? sale.payments.reduce((a,p)=>a+toNum(p.value),0) : 0;
-      
-      doc.setFont("helvetica","normal");
-      doc.setFontSize(10);
-      
-      const pagoLabel = "Pago:";
-      const pagoValue = fmtBRL(totalPago);
-      doc.text(pagoLabel, 40, y);
-      doc.text(pagoValue, 555 - doc.getTextWidth(pagoValue), y); y+=14;
-
-      if(totalPago < toNum(sale.totalBruto)){
-        const restante = toNum(sale.totalBruto) - totalPago;
-        doc.setFont("helvetica","bold");
-        const restanteLabel = "Restante a pagar:";
-        const restanteValue = fmtBRL(restante);
-        doc.text(restanteLabel, 40, y);
-        doc.text(restanteValue, 555 - doc.getTextWidth(restanteValue), y); y+=14;
+      if(y + LIN_H > PAGE_H - 90){
+        doc.addPage();
+        y = 50;
+        cabecalhoTabela();
+      }
+      if(idx % 2 === 1){
+        doc.setFillColor(...ZEBRA);
+        doc.rect(M, y, R - M, LIN_H, "F");
       }
 
-      y+=10;
-      doc.setLineWidth(0.5);
-      doc.setDrawColor(180, 180, 180);
-      doc.line(40, y, 555, y); y+=16;
-    }
-
-    // ═══════════════════════════════════════
-    // OBSERVAÇÕES
-    // ═══════════════════════════════════════
-    if(saleData.note){
+      const totalItem = toNum(it.price) * toNum(it.qty);
+      doc.setFont("helvetica","normal"); doc.setFontSize(8.5);
+      doc.setTextColor(...INK);
+      doc.text(String(idx + 1),                       COL.num + 2,  y + 11);
+      doc.text(fit(it.name, COL.cor - COL.prod - 8),  COL.prod,     y + 11);
+      doc.setTextColor(...MUTED);
+      doc.text(fit(corDoItem(it), COL.tam - COL.cor - 6), COL.cor,  y + 11);
+      doc.text(String(it.size || ""),                 COL.tam,      y + 11);
+      doc.text(fit(it.barcode || "-", 70),            COL.cod,      y + 11);
+      doc.setTextColor(...INK);
+      doc.text(String(it.qty),                        COL.qtd,      y + 11, { align:"right" });
+      doc.text(money(it.price),                       COL.unit,     y + 11, { align:"right" });
       doc.setFont("helvetica","bold");
-      doc.setFontSize(10);
-      doc.text("Observações:", 40, y); y+=14;
-      doc.setFont("helvetica","normal");
-      const noteLines = doc.splitTextToSize(saleData.note, 515);
-      doc.text(noteLines, 40, y);
-      y += 14 * noteLines.length + 10;
+      doc.text(money(totalItem),                      COL.total - 2, y + 11, { align:"right" });
+
+      y += LIN_H;
+      doc.setDrawColor(...LINE); doc.setLineWidth(0.4);
+      doc.line(M, y, R, y);
+    });
+
+    /* ─── Totais ─── */
+    y += 16;
+    if(y > PAGE_H - 170){ doc.addPage(); y = 50; }
+
+    const boxX = 330;
+    doc.setFont("helvetica","normal"); doc.setFontSize(9.5);
+    doc.setTextColor(...MUTED);
+    doc.text("Subtotal", boxX, y);
+    doc.setTextColor(...INK);
+    doc.text(fmtBRL(saleData.subtotal), R, y, { align:"right" });
+    y += 14;
+
+    if(toNum(saleData.discount) > 0){
+      doc.setTextColor(...MUTED);
+      doc.text("Desconto", boxX, y);
+      doc.setTextColor(...INK);
+      doc.text("- " + fmtBRL(saleData.discount), R, y, { align:"right" });
+      y += 14;
     }
 
-    // ═══════════════════════════════════════
-    // RODAPÉ PROFISSIONAL
-    // ═══════════════════════════════════════
-    const rodapeY = 780;
-    doc.setLineWidth(0.5);
-    doc.setDrawColor(180, 180, 180);
-    doc.line(40, rodapeY, 555, rodapeY);
+    y += 4;
+    doc.setFillColor(...ACCENT);
+    doc.rect(boxX, y - 2, R - boxX, 26, "F");
+    doc.setFont("helvetica","bold"); doc.setFontSize(12);
+    doc.setTextColor(255, 255, 255);
+    doc.text("TOTAL", boxX + 10, y + 15);
+    doc.text(fmtBRL(saleData.totalBruto), R - 10, y + 15, { align:"right" });
+    y += 40;
 
-    doc.setFont("helvetica","normal");
-    doc.setFontSize(9);
-    const rodape1 = isOrcamento ? "Orcamento valido por 7 dias." : "Obrigada pela preferencia!";
-    const rodape1Width = doc.getTextWidth(rodape1);
-    doc.text(rodape1, (pageWidth - rodape1Width) / 2, rodapeY + 12);
+    /* ─── Pagamentos ─── */
+    if(!isOrcamento && sale){
+      const totalPago = sale.payments ? sale.payments.reduce((a,p)=>a + toNum(p.value), 0) : 0;
+      const restante  = toNum(sale.totalBruto) - totalPago;
 
-    const rodape2 = "Este documento nao e nota fiscal.";
-    const rodape2Width = doc.getTextWidth(rodape2);
-    doc.text(rodape2, (pageWidth - rodape2Width) / 2, rodapeY + 22);
+      doc.setFont("helvetica","bold"); doc.setFontSize(8);
+      doc.setTextColor(...ACCENT);
+      doc.text("PAGAMENTO", M, y);
+      y += 14;
+
+      doc.setFont("helvetica","normal"); doc.setFontSize(9);
+      if(sale.payments && sale.payments.length){
+        sale.payments.forEach(p=>{
+          if(y > PAGE_H - 80){ doc.addPage(); y = 50; }
+          const quando = fmtDataBR(p.date);
+          const parc = toNum(p.installments) > 1 ? ` ${p.installments}x` : "";
+          doc.setTextColor(...MUTED);
+          doc.text(fit(`${p.method || "-"}${parc}${quando ? "  ·  " + quando : ""}`, 300), M, y);
+          doc.setTextColor(...INK);
+          doc.text(fmtBRL(p.value), R, y, { align:"right" });
+          y += 13;
+        });
+        y += 2;
+      }
+
+      doc.setDrawColor(...LINE); doc.setLineWidth(0.4);
+      doc.line(M, y, R, y); y += 14;
+
+      doc.setFont("helvetica","bold"); doc.setFontSize(10);
+      if(restante > 0.005){
+        doc.setTextColor(...INK);
+        doc.text("Total pago", M, y);
+        doc.text(fmtBRL(totalPago), R, y, { align:"right" });
+        y += 15;
+        doc.setTextColor(...ACCENT);
+        doc.text("Restante a pagar", M, y);
+        doc.text(fmtBRL(restante), R, y, { align:"right" });
+      } else {
+        doc.setTextColor(31, 122, 60);
+        doc.text("PAGO INTEGRALMENTE", M, y);
+        doc.setTextColor(...INK);
+        doc.text(fmtBRL(totalPago), R, y, { align:"right" });
+      }
+      y += 22;
+    }
+
+    /* ─── Observações ─── */
+    if(saleData.note){
+      if(y > PAGE_H - 110){ doc.addPage(); y = 50; }
+      doc.setFont("helvetica","bold"); doc.setFontSize(8);
+      doc.setTextColor(...ACCENT);
+      doc.text("OBSERVAÇÕES", M, y); y += 13;
+      doc.setFont("helvetica","normal"); doc.setFontSize(9);
+      doc.setTextColor(...MUTED);
+      const noteLines = doc.splitTextToSize(saleData.note, R - M);
+      doc.text(noteLines, M, y);
+      y += 12 * noteLines.length;
+    }
+
+    /* ─── Rodapé (em todas as páginas) ─── */
+    const totalPaginas = doc.getNumberOfPages();
+    for(let pg = 1; pg <= totalPaginas; pg++){
+      doc.setPage(pg);
+      const ry = PAGE_H - 52;
+      doc.setDrawColor(...LINE); doc.setLineWidth(0.5);
+      doc.line(M, ry, R, ry);
+
+      doc.setFont("helvetica","bold"); doc.setFontSize(8.5);
+      doc.setTextColor(...ACCENT);
+      doc.text(isOrcamento ? "Orçamento válido por 7 dias." : "Obrigada pela preferência!",
+               PAGE_W / 2, ry + 14, { align:"center" });
+
+      doc.setFont("helvetica","normal"); doc.setFontSize(7.5);
+      doc.setTextColor(...MUTED);
+      doc.text("Este documento não é nota fiscal.", PAGE_W / 2, ry + 25, { align:"center" });
+      if(totalPaginas > 1){
+        doc.text(`${pg}/${totalPaginas}`, R, ry + 25, { align:"right" });
+      }
+    }
 
     const tipo = isOrcamento ? "orcamento" : "venda";
     const file = `vaidosa_${tipo}_${new Date(saleData.date).toISOString().slice(0,10)}_${Date.now().toString(16).slice(-6)}.pdf`;
