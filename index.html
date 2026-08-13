@@ -422,12 +422,27 @@
       --w-etiqueta: 33mm;
       --h-etiqueta: 50mm;
     }
-    .eti-item-lista{
-      background:#f9fafb;border:1px solid var(--line);
-      padding:10px;border-radius:6px;font-size:13px;
-      cursor:pointer;transition:.15s ease;
+    /* Um card por modelo+cor, com uma caixinha de quantidade por grade —
+       é assim que a etiqueta é pensada na prática ("quero X de cada
+       tamanho dessa cor"), em vez de uma linha por cor×tamanho. */
+    .eti-grupo{
+      border:1px solid var(--line);border-radius:10px;
+      padding:10px 12px;margin-bottom:8px;background:#fff;
     }
-    .eti-item-lista:hover{border-color:var(--accent);background:#fdf2f8}
+    .eti-grupo-cab{
+      display:flex;justify-content:space-between;align-items:center;
+      gap:8px;flex-wrap:wrap;margin-bottom:8px;
+    }
+    .eti-grupo-nome{font-weight:700;line-height:1.3}
+    .eti-grades{display:flex;gap:8px;flex-wrap:wrap}
+    .eti-grade{text-align:center}
+    .eti-grade label{
+      display:block;font-size:11px;font-weight:800;
+      color:var(--accent);margin-bottom:2px;
+    }
+    .eti-grade input{width:58px;text-align:center;padding:6px}
+    .eti-grade input.temQtd{border-color:var(--accent);background:#fdf2f8;font-weight:700}
+    .eti-grade .eti-est{font-size:10px;color:var(--muted);margin-top:2px}
     #folha-impressao{
       background:#fff;
       width:99mm;
@@ -718,35 +733,21 @@
         <button class="btn" id="btnZebraReconectar" style="font-size:11px;padding:3px 10px">Reconectar</button>
       </div>
       <div class="warnBox small" style="margin-bottom:10px">
-        Busque o produto, ajuste a quantidade e adicione na fila. Imprima direto num rolo de 32×50mm (3 colunas).
+        Busque pelo modelo (ex: <b>blusa magnólia</b>) e digite quantas etiquetas quer de cada tamanho, em quantas cores precisar de uma vez só. Imprime num rolo de 32×50mm (3 colunas).
       </div>
 
       <div class="row">
         <div>
-          <label>Buscar produto (nome ou código de barras)</label>
-          <input id="eti_search" placeholder="Digite pra buscar..." autocomplete="off" />
+          <label>Buscar modelo, cor ou código de barras</label>
+          <input id="eti_search" placeholder="Ex: blusa magnólia, azul marinho, VF000123..." autocomplete="off" />
         </div>
       </div>
-      <div id="eti_resultList" style="max-height:180px;overflow-y:auto;border:1px solid var(--line);border-radius:8px;margin-top:8px"></div>
-
-      <div class="sep"></div>
-
-      <label>Produto selecionado</label>
-      <div id="eti_selNome" style="font-weight:700;color:var(--accent);margin-bottom:8px">Nenhum</div>
-
-      <div class="row cols2">
-        <div>
-          <label>Tamanho</label>
-          <input id="eti_selTam" readonly />
-        </div>
-        <div>
-          <label>Quantidade de etiquetas</label>
-          <input id="eti_qtd" type="number" value="1" min="1" />
-        </div>
-      </div>
+      <div id="eti_resultInfo" class="muted small" style="margin-top:8px"></div>
+      <div id="eti_resultList" style="max-height:420px;overflow-y:auto;margin-top:8px"></div>
 
       <div class="btns" style="margin-top:10px">
         <button class="btn ok" id="btnEtiAdd">+ Adicionar na fila</button>
+        <button class="btn" id="btnEtiUsarEstoque" title="Preenche cada tamanho com a quantidade que existe hoje no estoque">Preencher com o estoque</button>
       </div>
 
       <div class="sep"></div>
@@ -4590,76 +4591,180 @@
      de dois arquivos abertos no mesmo navegador. Agora é só mais uma aba
      lendo db.products, o mesmo cache já carregado do Supabase.
   ========================= */
-  let etiProdutoSelecionado = null;
+  // Busca agrupada por modelo+cor, com uma caixinha de quantidade por
+  // grade. Antes era uma lista achatada (1 linha por cor×tamanho) cortada
+  // em 20 resultados — com o catálogo grande isso escondia grade inteira
+  // sem avisar ("pesquisa a blusa e não mostra todas que têm") e obrigava
+  // a adicionar etiqueta de um tamanho por vez.
+  const ETI_SIZE_ORDER = ["G1","G2","G3","G4","G5"];
+  const ETI_MAX_GRUPOS = 40;
+
+  function etiSizeRank(s){
+    const i = ETI_SIZE_ORDER.indexOf(s);
+    return i === -1 ? ETI_SIZE_ORDER.length : i;
+  }
 
   function etiRenderSearch(){
     const term = document.getElementById("eti_search").value.trim().toLowerCase();
     const list = document.getElementById("eti_resultList");
+    const info = document.getElementById("eti_resultInfo");
     list.innerHTML = "";
+    info.textContent = "";
+    etiAtualizarTotal();
     if(term.length < 1) return;
 
     const matches = db.products.filter(p=>
       (p.name && p.name.toLowerCase().includes(term)) ||
       (p.barcode && String(p.barcode).toLowerCase().includes(term)) ||
-      (p.colorName && p.colorName.toLowerCase().includes(term))
-    ).slice(0, 20);
+      (p.colorName && p.colorName.toLowerCase().includes(term)) ||
+      (p.sku && p.sku.toLowerCase().includes(term))
+    );
 
-    matches.forEach(p=>{
-      const div = document.createElement("div");
-      div.className = "eti-item-lista";
-      div.innerHTML = `<b>${escapeHtml(p.name)}${p.colorName?(" — "+escapeHtml(p.colorName)):""}</b> <span style="float:right;color:var(--accent)">${escapeHtml(p.size||"")}</span><br><small class="muted">Ref: ${escapeHtml(p.barcode)} | Est: ${toNum(p.stock)}</small>`;
-      div.onclick = ()=>etiSelecionar(p);
-      list.appendChild(div);
+    if(!matches.length){
+      info.textContent = "Nenhum produto encontrado com esse termo.";
+      return;
+    }
+
+    const mapa = new Map();
+    for(const p of matches){
+      const key = `${p.name}||${p.colorId || p.colorName || ""}`;
+      if(!mapa.has(key)) mapa.set(key, { name:p.name, colorName:p.colorName||"", itens:[] });
+      mapa.get(key).itens.push(p);
+    }
+
+    const todos = Array.from(mapa.values())
+      .sort((a,b)=> (a.name+a.colorName).localeCompare(b.name+b.colorName));
+    const grupos = todos.slice(0, ETI_MAX_GRUPOS);
+
+    // O corte é sempre anunciado — o bug anterior era exatamente cortar em
+    // silêncio e parecer que o produto não existia.
+    info.textContent = todos.length > grupos.length
+      ? `Mostrando ${grupos.length} de ${todos.length} cores encontradas — refine a busca pra ver o resto.`
+      : `${todos.length} cor(es) encontrada(s).`;
+
+    list.innerHTML = grupos.map(g=>{
+      const itens = g.itens.slice().sort((a,b)=>{
+        const d = etiSizeRank(a.size) - etiSizeRank(b.size);
+        return d !== 0 ? d : String(a.size||"").localeCompare(String(b.size||""));
+      });
+      const grades = itens.map(p=>`
+        <div class="eti-grade">
+          <label>${escapeHtml(p.size||"—")}</label>
+          <input type="number" min="0" step="1" placeholder="0"
+                 data-eti-qtd="${escapeHtml(p.id)}" />
+          <div class="eti-est">est: ${toNum(p.stock)}</div>
+        </div>
+      `).join("");
+      return `
+        <div class="eti-grupo">
+          <div class="eti-grupo-cab">
+            <div class="eti-grupo-nome">
+              ${escapeHtml(g.name)}${g.colorName?` <span style="color:var(--accent)">· ${escapeHtml(g.colorName)}</span>`:""}
+            </div>
+            <button class="btn small" data-eti-estoque="1">Usar estoque</button>
+          </div>
+          <div class="eti-grades">${grades}</div>
+        </div>
+      `;
+    }).join("");
+
+    list.querySelectorAll("button[data-eti-estoque]").forEach(btn=>{
+      btn.addEventListener("click", ()=>{
+        const grupo = btn.closest(".eti-grupo");
+        etiPreencherComEstoque(grupo);
+      });
     });
   }
   document.getElementById("eti_search").addEventListener("input", etiRenderSearch);
 
-  function etiSelecionar(p){
-    etiProdutoSelecionado = p;
-    document.getElementById("eti_selNome").textContent = p.name;
-    document.getElementById("eti_selTam").value = p.size || "";
-    document.getElementById("eti_resultList").innerHTML = "";
-    document.getElementById("eti_search").value = "";
-    document.getElementById("eti_qtd").focus();
+  // Recebeu mercadoria nova? Uma etiqueta por peça em estoque é o caso
+  // mais comum — esse atalho evita redigitar a grade inteira na mão.
+  function etiPreencherComEstoque(escopo){
+    const inputs = (escopo || document).querySelectorAll("input[data-eti-qtd]");
+    inputs.forEach(inp=>{
+      const p = db.products.find(x=>x.id===inp.dataset.etiQtd);
+      const est = p ? Math.max(0, toNum(p.stock)) : 0;
+      inp.value = est > 0 ? est : "";   // tamanho sem estoque fica em branco, não "0"
+    });
+    etiAtualizarTotal();
   }
 
+  function etiTotalDigitado(){
+    let total = 0;
+    document.querySelectorAll("#eti_resultList input[data-eti-qtd]").forEach(inp=>{
+      total += Math.max(0, Math.floor(toNum(inp.value)));
+    });
+    return total;
+  }
+
+  function etiAtualizarTotal(){
+    const total = etiTotalDigitado();
+    const btn = document.getElementById("btnEtiAdd");
+    btn.textContent = total > 0 ? `+ Adicionar ${total} etiqueta(s) na fila` : "+ Adicionar na fila";
+    document.querySelectorAll("#eti_resultList input[data-eti-qtd]").forEach(inp=>{
+      inp.classList.toggle("temQtd", Math.floor(toNum(inp.value)) > 0);
+    });
+  }
+  document.getElementById("eti_resultList").addEventListener("input", e=>{
+    if(e.target.matches("input[data-eti-qtd]")) etiAtualizarTotal();
+  });
+
+  function etiCriarEtiqueta(p){
+    const div = document.createElement("div");
+    div.className = "etiqueta";
+    div.innerHTML = `
+      <div class="eti-topo">
+        <div class="eti-topo-txt">VAIDOSA</div>
+        <div class="eti-topo-txt">FASHION</div>
+      </div>
+      <div class="eti-plus">PLUS SIZE</div>
+      <div class="eti-tarja">VAIDOSA</div>
+      <svg class="eti-barcode"></svg>
+      <div class="eti-nome">${escapeHtml(String(p.name).substring(0, 18))}</div>
+      <div class="eti-ref">REF: ${escapeHtml(p.sku || "000")}</div>
+      <div class="eti-tam">${escapeHtml(p.size||"")}</div>
+      <div class="crop-bl"></div>
+      <div class="crop-br"></div>
+    `;
+    document.getElementById("folha-impressao").appendChild(div);
+
+    JsBarcode(div.querySelector(".eti-barcode"), p.barcode, {
+      format: "CODE128",
+      lineColor: "#000",
+      width: 1.5,
+      height: 25,
+      displayValue: true,
+      fontSize: 10,
+      margin: 0
+    });
+  }
+
+  document.getElementById("btnEtiUsarEstoque").addEventListener("click", ()=>{
+    const inputs = document.querySelectorAll("#eti_resultList input[data-eti-qtd]");
+    if(!inputs.length) return toast("Busque primeiro","Procure um modelo pra preencher a grade.");
+    etiPreencherComEstoque(document.getElementById("eti_resultList"));
+    toast("Preenchido", `Grade preenchida com o estoque atual (${etiTotalDigitado()} etiqueta(s)).`);
+  });
+
   document.getElementById("btnEtiAdd").addEventListener("click", ()=>{
-    if(!etiProdutoSelecionado) return toast("Selecione um produto","Busque e escolha um produto primeiro.");
+    const inputs = Array.from(document.querySelectorAll("#eti_resultList input[data-eti-qtd]"));
+    if(!inputs.length) return toast("Busque primeiro","Procure um modelo e digite as quantidades.");
 
-    const qtd = Math.max(1, Math.floor(toNum(document.getElementById("eti_qtd").value)));
-    const area = document.getElementById("folha-impressao");
-    const p = etiProdutoSelecionado;
-
-    for(let i=0; i<qtd; i++){
-      const div = document.createElement("div");
-      div.className = "etiqueta";
-      div.innerHTML = `
-        <div class="eti-topo">
-          <div class="eti-topo-txt">VAIDOSA</div>
-          <div class="eti-topo-txt">FASHION</div>
-        </div>
-        <div class="eti-plus">PLUS SIZE</div>
-        <div class="eti-tarja">VAIDOSA</div>
-        <svg class="eti-barcode"></svg>
-        <div class="eti-nome">${escapeHtml(String(p.name).substring(0, 18))}</div>
-        <div class="eti-ref">REF: ${escapeHtml(p.sku || "000")}</div>
-        <div class="eti-tam">${escapeHtml(p.size||"")}</div>
-        <div class="crop-bl"></div>
-        <div class="crop-br"></div>
-      `;
-      area.appendChild(div);
-
-      JsBarcode(div.querySelector(".eti-barcode"), p.barcode, {
-        format: "CODE128",
-        lineColor: "#000",
-        width: 1.5,
-        height: 25,
-        displayValue: true,
-        fontSize: 10,
-        margin: 0
-      });
+    let total = 0, modelos = 0;
+    for(const inp of inputs){
+      const qtd = Math.max(0, Math.floor(toNum(inp.value)));
+      if(qtd < 1) continue;
+      const p = db.products.find(x=>x.id===inp.dataset.etiQtd);
+      if(!p) continue;
+      for(let i=0; i<qtd; i++) etiCriarEtiqueta(p);
+      total += qtd;
+      modelos++;
+      inp.value = "";
     }
-    toast("Adicionado", `${qtd} etiqueta(s) de ${p.name} na fila.`);
+
+    if(!total) return toast("Nada preenchido","Digite a quantidade em pelo menos um tamanho.");
+    etiAtualizarTotal();
+    toast("Adicionado", `${total} etiqueta(s) de ${modelos} grade(s) na fila.`);
   });
 
   document.getElementById("btnEtiPrint").addEventListener("click", async ()=>{
