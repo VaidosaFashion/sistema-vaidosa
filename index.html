@@ -2300,6 +2300,7 @@
   // do binário). Carregada uma vez no início; se falhar, o PDF cai num
   // cabeçalho de texto sem quebrar nada.
   let logoDataUrl = null;
+  let logoRatio = 629/1218;   // altura/largura — recalculado ao carregar
   function preloadLogoParaPdf(){
     const img = new Image();
     img.onload = ()=>{
@@ -2313,6 +2314,7 @@
         // mandado por WhatsApp).
         const maxW = 320;
         const escala = Math.min(1, maxW / img.naturalWidth);
+        logoRatio = img.naturalHeight / img.naturalWidth;
         const cv = document.createElement("canvas");
         cv.width = Math.round(img.naturalWidth * escala);
         cv.height = Math.round(img.naturalHeight * escala);
@@ -6023,18 +6025,27 @@
 
     let y = 46;
 
-    /* ─── Cabeçalho ─── */
+    /* ─── Cabeçalho ───
+       A base de tudo aqui é o rodapé REAL da logo (logoBaixo), calculado
+       da proporção do arquivo — nada de posição fixa chutada, senão o
+       slogan volta a cair por cima da logo se o arquivo mudar. */
+    const logoW = 112;
+    const logoH = logoW * logoRatio;
+    let logoBaixo;
+
     if(logoDataUrl){
-      const lw = 128, lh = lw * (629/1218);   // proporção real do arquivo
-      doc.addImage(logoDataUrl, "JPEG", M, y - 6, lw, lh);
+      doc.addImage(logoDataUrl, "JPEG", M, y - 8, logoW, logoH);
+      logoBaixo = y - 8 + logoH;
     } else {
       doc.setFont("helvetica","bold"); doc.setFontSize(16);
       doc.setTextColor(...ACCENT);
-      doc.text("VAIDOSA FASHION PLUS", M, y + 14);
+      doc.text("VAIDOSA FASHION PLUS", M, y + 12);
+      logoBaixo = y + 16;
     }
+
     doc.setFont("helvetica","normal"); doc.setFontSize(8);
     doc.setTextColor(...MUTED);
-    doc.text("Moda Plus Size | Tamanhos G1 ao G5", M, y + 52);
+    doc.text("Moda Plus Size | Tamanhos G1 ao G5", M, logoBaixo + 12);
 
     const tipoDoc = isOrcamento ? "ORÇAMENTO" : "RECIBO DE VENDA";
     doc.setFont("helvetica","bold"); doc.setFontSize(15);
@@ -6050,7 +6061,8 @@
     }
     doc.text(new Date(saleData.date).toLocaleString("pt-BR"), R, cabY, { align:"right" });
 
-    y += 66;
+    // A régua fica abaixo do mais baixo entre os dois lados do cabeçalho.
+    y = Math.max(logoBaixo + 12, cabY) + 14;
     doc.setDrawColor(...ACCENT); doc.setLineWidth(2);
     doc.line(M, y, R, y);
     y += 22;
