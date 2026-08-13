@@ -294,4 +294,22 @@ Comportamento resultante: cada bipada lança +1 (ou o que estiver no campo Quant
 
 **Ainda pendente (ele descreveu, não construído):** acumular as bipadas numa lista pendente em vez de lançar uma a uma — bipar tudo, conferir o lote na tela, confirmar no final. Com o Enter funcionando e o foco voltando sozinho, o fluxo "bipa-bipa-bipa" já ficou contínuo; avaliar com ele se a lista de conferência ainda é necessária antes de construir.
 
+## Recibo em PDF reformulado (2026-08-13)
+
+**No ar.** Kennedy: "ele não está indo o código nem as cores que a pessoa está comprando... ele está bem amador". As vendedoras reclamaram na prática — recibo sem cor não serve pra conferir a peça na hora da entrega, agora que a loja tem a mesma peça em 8-10 cores.
+
+**O que faltava de dado:**
+- **Cor** — nunca apareceu porque o campo `colors`/`products.color_id` só passou a existir em 2026-08-06, muito depois desse PDF ser escrito. **`sale_items` não guarda cor** (o snapshot da venda tem name/size/price/cost/barcode, não cor), então `corDoItem()` busca no cadastro por `product_id`, com `barcode` como segunda tentativa. Consequência aceita: se o produto for excluído do cadastro, a cor some de recibos antigos (nome/preço/tamanho continuam, por causa do snapshot). Se isso incomodar, o fix definitivo é uma coluna `color_name` em `sale_items` + ajuste na RPC `create_sale` — não feito agora porque exigiria migração + SQL manual (bug do `db push`), e a busca cobre 100% dos casos reais hoje.
+- **Código de barras** — simplesmente nunca foi incluído no PDF.
+
+**Layout novo**: itens viram tabela de verdade (`#`, `PRODUTO`, `COR`, `TAM`, `CÓDIGO`, `QTD`, `UNIT.`, `TOTAL`) em vez de duas linhas soltas por item ligadas por pontilhado. Logo no cabeçalho, cor da marca (`#b8276c`) no cabeçalho da tabela e na caixa de TOTAL, zebra nas linhas, bloco de pagamentos com método+data por linha, "PAGO INTEGRALMENTE" em verde (ou "Restante a pagar" em rosa), rodapé repetido em todas as páginas com `pg/total`. `fit()` trunca com reticências pra nunca vazar da coluna; quebra de página repete o cabeçalho da tabela.
+
+**Dois bugs reais corrigidos no caminho:**
+1. **Acentos do rodapé** — estavam escritos *sem acento no próprio código-fonte* ("preferencia", "nao e nota fiscal", "Orcamento valido"). Não era bug de encoding: jsPDF usa `WinAnsiEncoding` e sempre suportou acento — tanto que "ORÇAMENTO"/"Observações"/"Não informado" já funcionavam no mesmo arquivo. Era só o texto mesmo.
+2. **Data do pagamento saía um dia atrás.** `sale_payments.paid_on` é coluna `DATE` ("2026-08-01") e `new Date("2026-08-01")` é meia-noite **UTC** — em fuso do Brasil (-03) volta pro dia 31/07. Exatamente o mesmo bug já documentado em `salesEntradasDoMes()`; agora existe o helper compartilhado **`fmtDataBR()`** (trata "YYYY-MM-DD" por string, cai pro `new Date()` só em timestamp completo). **Usar esse helper em qualquer data-only nova** — o padrão volta a aparecer toda vez que alguém formata `paid_on`/`proximo_vencimento`/`data_inicio`.
+
+**Peso do arquivo**: a logo é reduzida pra 320px e achatada em **JPEG** sobre branco antes de entrar no PDF. Em PNG com transparência o jsPDF embute praticamente sem compressão — cada recibo saía com **274KB** (o RGBA cru de 320×165 já dá 211KB). Agora sai com **24KB**, 11× menor; importante porque o recibo é mandado por WhatsApp. Se um dia a logo precisar de fundo transparente no PDF, lembrar que o custo é esse.
+
+**Testado sem login**: PDF gerado no navegador com venda fake (8 itens, 2 do mesmo modelo em cores diferentes, observação com acento) e o conteúdo do arquivo lido byte a byte — confirmado cor e código em cada linha, acentos corretos (`preferência`, `não é`, `OBSERVAÇÕES`, `Bordô`, `Goiânia`, `CÓDIGO`), data do pagamento 01/08 (não 31/07), coordenadas de todas as colunas sem sobreposição e dentro da página. O construtor do jsPDF precisou ser envelopado pra interceptar o download (`save` é propriedade **da instância**, não do protótipo — sobrescrever o protótipo não pega).
+
 **Nota pra próxima sessão**: os outros loaders (`clients`, `vendedores`, `categorias`, `v_contas`) têm o mesmo padrão sem `.range()` — não corrigidos agora porque nenhum está perto de 1000 linhas (a loja é pequena, 3 usuários), mas é o mesmo bug latente se algum desses crescer muito no futuro. `sales`/`stock_moves`/`movimentacoes` já tinham `.limit()` deliberado (mostram "recentes", não "tudo") — não é a mesma categoria de bug.
