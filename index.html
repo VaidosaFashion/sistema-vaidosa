@@ -445,6 +445,25 @@
     .chipParcial{background:#fff5e6;color:#a15c00;border-color:#f2d9ae}
     .chipAberto{background:#fdeaf2;color:#b8276c;border-color:#f3c2d8}
 
+    /* ===== Combobox de cliente (Nova venda) =====
+       Substitui a lista nativa do <select>, que abria com a base inteira
+       de clientes ocupando meia tela. Segue os estilos de formulário já
+       usados no sistema — o dropdown é só borda leve + sombra suave. */
+    .combo{position:relative}
+    .comboList{
+      position:absolute;top:calc(100% + 4px);left:0;right:0;z-index:40;
+      background:#fff;border:1px solid var(--line);border-radius:10px;
+      box-shadow:0 6px 20px rgba(24,16,20,.10);
+      max-height:264px;overflow:auto;padding:4px;
+    }
+    .comboItem{
+      padding:8px 10px;border-radius:7px;cursor:pointer;line-height:1.25;
+    }
+    .comboItem:hover,.comboItem.ativo{background:#fdf2f8}
+    .comboItem .cbNome{font-weight:600;font-size:13px}
+    .comboItem .cbSub{color:var(--muted);font-size:11.5px;margin-top:1px}
+    .comboVazio{padding:10px;color:var(--muted);font-size:12.5px}
+
     /* Drawer de detalhes. O vidro é discreto de propósito: translúcido
        claro + blur leve, mantendo contraste de texto — não é pra virar
        a identidade do sistema. */
@@ -1242,7 +1261,16 @@
       <div class="row cols3">
         <div>
           <label>Cliente</label>
-          <select id="sale_client"></select>
+          <!-- Combobox pesquisável. O <select id="sale_client"> continua
+               existindo (escondido) e segue sendo a ÚNICA fonte do id do
+               cliente: btnFinalize, WhatsApp, PDF de orçamento e os
+               resets leem ele exatamente como antes. O input abaixo é só
+               a camada visível de busca. -->
+          <div class="combo" id="sale_clientCombo">
+            <input id="sale_clientBusca" autocomplete="off" placeholder="Cliente não informado" />
+            <div class="comboList hide" id="sale_clientLista"></div>
+          </div>
+          <select id="sale_client" class="hide"></select>
         </div>
 
         <div>
@@ -1376,7 +1404,10 @@
       </div>
     </div>
 
-    <div class="card" style="display:flex;flex-direction:column">
+    <!-- align-self:start só neste card: o grid esticava ele até a altura
+         da coluna da esquerda, sobrando um bloco branco embaixo da lista.
+         Escopado aqui pra não mexer no .grid, que é usado em outras abas. -->
+    <div class="card" style="display:flex;flex-direction:column;align-self:start">
       <div style="display:flex;align-items:center;justify-content:space-between;gap:10px">
         <h2 style="margin:0">Vendas recentes</h2>
         <button id="btnVerTodasVendas"
@@ -1384,7 +1415,9 @@
           Ver todas
         </button>
       </div>
-      <div id="salesList" style="overflow:auto;flex:1;min-height:0;margin-top:8px"></div>
+      <!-- max-height só entra em ação no "Ver todas"; com 8 vendas o card
+           acompanha o conteúdo, sem sobra branca. -->
+      <div id="salesList" style="overflow:auto;max-height:70vh;margin-top:8px"></div>
     </div>
   </section>
 
@@ -5380,6 +5413,122 @@
     sel.value = currentValue;
   }
 
+  /* ===== Combobox de cliente =====
+     Camada só de interface por cima do <select id="sale_client">, que
+     continua sendo a fonte do id usado ao lançar a venda. Nada de
+     cadastro, id ou vínculo de venda muda aqui.
+     Filtragem é local: db.clients já está inteiro em memória (carregado
+     uma vez em loadClientsFromSupabase) e a base é pequena — não vale
+     consulta por tecla nem debounce. */
+  const CLIENTE_MAX_RESULTADOS = 8;
+  let comboClienteIdx = -1;
+
+  // Rótulo secundário: telefone e documento, só o que o cliente tiver.
+  function clienteSubtitulo(c){
+    const doc = c.cnpj ? ("CNPJ " + c.cnpj) : (c.cpf ? ("CPF " + c.cpf) : "");
+    return [c.phone, doc].filter(Boolean).join("  ·  ");
+  }
+
+  function filtrarClientes(termo){
+    const q = asciiUpper(termo).trim();          // asciiUpper já existe: tira acento e sobe caixa
+    if(!q) return db.clients.slice(0, CLIENTE_MAX_RESULTADOS);
+    const qDigitos = q.replace(/\D/g,"");
+    return db.clients.filter(c=>{
+      const alvo = asciiUpper([c.name, c.phone, c.cpf, c.cnpj].filter(Boolean).join(" "));
+      if(alvo.includes(q)) return true;
+      // Telefone/CPF/CNPJ digitados sem pontuação também precisam achar.
+      return qDigitos.length >= 3 && alvo.replace(/\D/g,"").includes(qDigitos);
+    }).slice(0, CLIENTE_MAX_RESULTADOS);
+  }
+
+  function renderComboCliente(termo){
+    const lista = document.getElementById("sale_clientLista");
+    const achados = filtrarClientes(termo);
+    comboClienteIdx = -1;
+
+    if(!achados.length){
+      lista.innerHTML = `<div class="comboVazio">Nenhum cliente encontrado</div>`;
+    } else {
+      // A opção "sem cliente" só faz sentido quando não se está filtrando.
+      const semCliente = termo.trim()
+        ? ""
+        : `<div class="comboItem" data-cid=""><div class="cbNome">Cliente não informado</div></div>`;
+      lista.innerHTML = semCliente + achados.map(c=>{
+        const sub = clienteSubtitulo(c);
+        return `<div class="comboItem" data-cid="${escapeHtml(c.id)}">
+          <div class="cbNome">${escapeHtml(c.name)}</div>
+          ${sub ? `<div class="cbSub">${escapeHtml(sub)}</div>` : ""}
+        </div>`;
+      }).join("");
+      lista.querySelectorAll(".comboItem").forEach(el=>{
+        el.addEventListener("mousedown", e=>{     // mousedown: acontece antes do blur do input
+          e.preventDefault();
+          setSaleClient(el.dataset.cid);
+        });
+      });
+    }
+    lista.classList.remove("hide");
+  }
+
+  function fecharComboCliente(){
+    document.getElementById("sale_clientLista").classList.add("hide");
+    comboClienteIdx = -1;
+  }
+
+  // Único ponto que grava o cliente escolhido. Mantém o <select> como
+  // fonte do id e dispara "change" pra não perder o aviso de 2ª troca,
+  // que já escutava esse evento.
+  function setSaleClient(id){
+    const sel = document.getElementById("sale_client");
+    sel.value = id || "";
+    const c = id ? findClientById(id) : null;
+    document.getElementById("sale_clientBusca").value = c ? c.name : "";
+    sel.dispatchEvent(new Event("change"));
+    fecharComboCliente();
+  }
+
+  (function ligarComboCliente(){
+    const inp = document.getElementById("sale_clientBusca");
+    const lista = document.getElementById("sale_clientLista");
+
+    inp.addEventListener("focus", ()=>renderComboCliente(inp.value));
+    inp.addEventListener("input", ()=>renderComboCliente(inp.value));
+
+    inp.addEventListener("keydown", e=>{
+      const itens = [...lista.querySelectorAll(".comboItem")];
+      if(e.key === "Escape"){ fecharComboCliente(); inp.blur(); return; }
+      if(!itens.length || lista.classList.contains("hide")) return;
+
+      if(e.key === "ArrowDown" || e.key === "ArrowUp"){
+        e.preventDefault();
+        comboClienteIdx += (e.key === "ArrowDown" ? 1 : -1);
+        if(comboClienteIdx < 0) comboClienteIdx = itens.length - 1;
+        if(comboClienteIdx >= itens.length) comboClienteIdx = 0;
+        itens.forEach((el,i)=>el.classList.toggle("ativo", i === comboClienteIdx));
+        itens[comboClienteIdx].scrollIntoView({block:"nearest"});
+      } else if(e.key === "Enter"){
+        e.preventDefault();
+        const alvo = comboClienteIdx >= 0 ? itens[comboClienteIdx] : itens[0];
+        if(alvo) setSaleClient(alvo.dataset.cid);
+      }
+    });
+
+    // Sair do campo sem escolher volta a mostrar o cliente que está
+    // realmente selecionado — o texto solto nunca vira vínculo de venda.
+    inp.addEventListener("blur", ()=>{
+      setTimeout(()=>{
+        fecharComboCliente();
+        const atual = document.getElementById("sale_client").value;
+        const c = atual ? findClientById(atual) : null;
+        inp.value = c ? c.name : "";
+      }, 120);
+    });
+
+    document.addEventListener("click", e=>{
+      if(!document.getElementById("sale_clientCombo").contains(e.target)) fecharComboCliente();
+    });
+  })();
+
   function renderSaleVendedorSelect(){
     const sel = document.getElementById("sale_vendedor");
     const currentValue = sel.value;
@@ -5738,7 +5887,7 @@
     // Limpar tudo automaticamente após 1.5 segundos
     setTimeout(()=>{
       currentSale = { items:[], finalizedSaleId:null };
-      document.getElementById("sale_client").value = "";
+      setSaleClient("");   // limpa o <select> e o texto visível de uma vez
       document.getElementById("sale_vendedor").value = "";
       document.getElementById("sale_channel").value = "Loja";
       document.getElementById("sale_kind").value = "Venda";
@@ -5758,7 +5907,7 @@
 
   document.getElementById("btnClearSale").addEventListener("click", ()=>{
     currentSale = { items:[], finalizedSaleId:null };
-    document.getElementById("sale_client").value = "";
+    setSaleClient("");   // limpa o <select> e o texto visível de uma vez
     document.getElementById("sale_vendedor").value = "";
     document.getElementById("sale_pay").value = "PIX";
     document.getElementById("sale_channel").value = "Loja";
