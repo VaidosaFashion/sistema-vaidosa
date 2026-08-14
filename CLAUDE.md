@@ -326,4 +326,26 @@ Comportamento resultante: cada bipada lança +1 (ou o que estiver no campo Quant
 
 **Ainda com corte silencioso, avaliados e deixados de propósito**: `db.sales.slice(0,80)` (vendas recentes), `db.stockMoves.slice(0,140)` (movimentações recentes), `db.sales.filter(cliente).slice(0,15)` (histórico do cliente) e os tops de relatório (`slice(0,50)`/`slice(0,10)`) — todos são visões de "recentes"/"top N" por definição, não buscas onde o usuário espera encontrar um item específico. Categoria diferente de bug.
 
+## Etiqueta redesenhada pra impressora térmica gasta (2026-08-13)
+
+**No ar.** Kennedy mandou **fotos das etiquetas impressas de verdade** — foi o que permitiu diagnosticar, o desenho na tela parecia ok. Sintomas: leitor não pega o código de barras, o código `VF000952` sai pequeno demais pra digitar à mão, o topo sai como fantasma, e "muita informação, desalinhado".
+
+**Ponto importante de arquitetura que causou metade do problema**: existem **dois desenhos independentes** da etiqueta, e antes eles tinham divergido —
+1. `gerarZPL()` → comandos ZPL direto pra Zebra (Browser Print, `localhost:9100`);
+2. `imprimirViaPopup()` → HTML/CSS numa janela nova, com uma **cópia própria do CSS** (janela nova não herda a folha de estilo do app).
+Ao mexer no visual da etiqueta é obrigatório mexer nos **três** lugares: o CSS principal, a cópia dentro de `imprimirViaPopup()`, e o `gerarZPL()`.
+
+**Causas encontradas e corrigidas:**
+- **Barra fina demais (a queixa principal).** O ZPL usava `^BY1` — módulo de 1 dot = **0,125 mm**, metade do mínimo prático do Code128 (0,25 mm) e abaixo do que uma cabeça térmica desgastada consegue resolver. Agora `^BY2`. O truque pra caber: `^BCN,90,N,N,N,A` — o **modo automático** (`A`) coloca "VF" no subconjunto B e comprime os 6 dígitos aos pares no subconjunto C, caindo de 123 pra **101 módulos** = 202 dots, o que deixa ~27 dots de zona de silêncio de cada lado numa etiqueta de 256 dots. Com 8 caracteres sem compressão **não caberia** com zona de silêncio decente.
+- **Barra baixa demais.** ZPL tinha altura 30 dots (3,75 mm); no navegador o SVG era espremido em `height:28px` (~4 mm de barra útil). Agora 90 dots / 12 mm.
+- **Código ilegível.** Era a linha de interpretação do próprio gerador (`^BC...,Y` e `displayValue:true` com `fontSize:10`), em corpo minúsculo. Desligada; o código agora é uma linha própria em corpo 13px / 34 dots.
+- **Topo fantasma.** A tarja preta com texto vazado (`^GB...,20` + `^FR` no ZPL; `background:#000;color:#fff` no CSS) e o "VAIDOSA FASHION" com `-webkit-text-stroke` (letra contornada, miolo branco). Área sólida e texto vazado são o pior caso pra térmica gasta. Trocados por texto preto simples.
+- **Excesso de informação.** Saíram "PLUS SIZE", a moldura do topo e a linha `REF: <sku>` (que quebrava em duas linhas e empurrava o resto). Entrou a **cor por extenso** — é a parte do SKU que a vendedora realmente precisa conferir na entrega.
+
+**Bug real achado junto**: `imprimirFilaZebra()` agrupava etiquetas consecutivas por **nome+tamanho** pra usar `^PQ`. Desde que cor virou campo (2026-08-06), "Camisa Lirio G2" existe em várias cores — duas cores seguidas viravam um lote só e **todas saíam com o código de barras da primeira**. Agora agrupa pelo código de barras. Testado: 2×VF000791 (Listrada) + 1×VF000801 (Marsala) → dois lotes separados, cada um com seu código.
+
+**Sobre "só as fileiras do meio o leitor consegue ler"**: a impressão pelo navegador monta 3 colunas de 33mm numa página de 99mm, e as colunas das pontas ficam sujeitas à margem/alinhamento da impressora. O caminho ZPL imprime **uma etiqueta por vez** (`^PW256`), sem colunas — não tem esse problema. Se o badge da aba Etiquetas não estiver em "Zebra conectada", ele está caindo no popup do navegador; vale confirmar isso antes de culpar o desenho.
+
+**Testado sem login**: etiqueta renderizada com produto fake e inspecionada ampliada (marca, barras largas, código grande, nome, cor, tamanho — sem tarja/moldura/REF); ZPL conferido comando a comando, com todos os `^FO` dentro de 256×400 e o barcode centralizado em x=27. **Não testado em papel** — vale imprimir uma e passar o leitor antes de rodar um lote grande.
+
 **Nota pra próxima sessão**: os outros loaders (`clients`, `vendedores`, `categorias`, `v_contas`) têm o mesmo padrão sem `.range()` — não corrigidos agora porque nenhum está perto de 1000 linhas (a loja é pequena, 3 usuários), mas é o mesmo bug latente se algum desses crescer muito no futuro. `sales`/`stock_moves`/`movimentacoes` já tinham `.limit()` deliberado (mostram "recentes", não "tudo") — não é a mesma categoria de bug.
