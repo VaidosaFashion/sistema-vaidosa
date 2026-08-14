@@ -462,18 +462,33 @@
       padding:2mm 1mm;position:relative;
       border:1px dashed #ddd;
     }
-    .eti-topo{border:1px solid #000;width:90%;padding:2px 0;margin-bottom:3px}
-    .eti-topo-txt{
-      font-family:Arial,sans-serif;font-weight:900;font-size:10px;
-      text-transform:uppercase;letter-spacing:1px;line-height:1;
-      color:#fff;-webkit-text-stroke:.5px black;
+    /* Etiqueta redesenhada pra impressora térmica gasta (2026-08-13).
+       O que saía errado na impressão real e foi removido:
+       - tarja preta com texto vazado e o "VAIDOSA FASHION" em texto
+         contornado (color:#fff + text-stroke): área sólida e letra
+         vazada saem como fantasma numa cabeça térmica desgastada;
+       - linha "REF: <sku>" longa, que quebrava em duas e empurrava
+         tudo, sem servir pra nada (a cor, que é a parte útil do SKU,
+         agora aparece sozinha e por extenso);
+       - código de barras estreito e baixo demais pro leitor pegar.
+       O código legível saiu de dentro do gerador de barras (corpo ~7px,
+       impossível de digitar) pra uma linha própria em corpo grande. */
+    .eti-marca{
+      font-family:Arial,sans-serif;font-weight:bold;font-size:7.5px;
+      letter-spacing:.8px;text-transform:uppercase;line-height:1.1;
+      margin-bottom:1.2mm;
     }
-    .eti-plus{font-size:6px;letter-spacing:2px;color:#000;margin-top:1px;font-weight:bold}
-    .eti-tarja{background:#000;color:#fff;font-weight:bold;font-size:9px;padding:1px 6px;margin-bottom:2px}
-    .eti-barcode{width:90%;height:28px;margin:2px 0 0 0}
-    .eti-nome{font-size:9px;font-weight:bold;text-transform:uppercase;max-width:100%;white-space:nowrap;overflow:hidden}
-    .eti-ref{font-size:8px;font-weight:bold;margin-bottom:2px}
-    .eti-tam{font-size:24px;font-weight:900;line-height:1;margin-top:auto}
+    .eti-barcode{width:100%;height:12mm;display:block}
+    .eti-cod{
+      font-family:Arial,sans-serif;font-weight:bold;font-size:13px;
+      letter-spacing:1px;line-height:1;margin-top:.4mm;
+    }
+    .eti-nome{
+      font-size:9px;font-weight:bold;text-transform:uppercase;
+      max-width:100%;white-space:nowrap;overflow:hidden;margin-top:1.4mm;
+    }
+    .eti-cor{font-size:8.5px;text-transform:uppercase;line-height:1.2}
+    .eti-tam{font-size:30px;font-weight:900;line-height:1;margin-top:auto;margin-bottom:1mm}
     .crop-bl{position:absolute;bottom:2px;left:2px;width:4px;height:4px;border-bottom:1px solid #000;border-left:1px solid #000}
     .crop-br{position:absolute;bottom:2px;right:2px;width:4px;height:4px;border-bottom:1px solid #000;border-right:1px solid #000}
 
@@ -4779,15 +4794,11 @@
     const div = document.createElement("div");
     div.className = "etiqueta";
     div.innerHTML = `
-      <div class="eti-topo">
-        <div class="eti-topo-txt">VAIDOSA</div>
-        <div class="eti-topo-txt">FASHION</div>
-      </div>
-      <div class="eti-plus">PLUS SIZE</div>
-      <div class="eti-tarja">VAIDOSA</div>
+      <div class="eti-marca">VAIDOSA FASHION</div>
       <svg class="eti-barcode"></svg>
-      <div class="eti-nome">${escapeHtml(String(p.name).substring(0, 18))}</div>
-      <div class="eti-ref">REF: ${escapeHtml(p.sku || "000")}</div>
+      <div class="eti-cod">${escapeHtml(p.barcode||"")}</div>
+      <div class="eti-nome">${escapeHtml(asciiUpper(p.name||"").slice(0,20))}</div>
+      <div class="eti-cor">${escapeHtml(asciiUpper(p.colorName||""))}</div>
       <div class="eti-tam">${escapeHtml(p.size||"")}</div>
       <div class="crop-bl"></div>
       <div class="crop-br"></div>
@@ -4797,11 +4808,11 @@
     JsBarcode(div.querySelector(".eti-barcode"), p.barcode, {
       format: "CODE128",
       lineColor: "#000",
-      width: 1.5,
-      height: 25,
-      displayValue: true,
-      fontSize: 10,
-      margin: 0
+      width: 2,            // barra larga: o motivo do leitor não pegar era barra fina demais
+      height: 60,
+      displayValue: false, // o código vai numa linha própria, em corpo grande
+      margin: 12,          // zona de silêncio — o leitor precisa de branco dos dois lados
+      background: "#fff"
     });
   }
 
@@ -6746,37 +6757,49 @@
     .addEventListener("click", ()=>detectZebra());
 
   function gerarZPL(p, qtd){
-    /* 203 DPI ≈ 8 dots/mm | etiqueta 32×50mm = 256×400 dots */
+    /* 203 DPI ≈ 8 dots/mm | etiqueta 32×50mm = 256×400 dots
+       Redesenhada em 2026-08-13. O que saiu e por quê:
+       - ^GB...,20 com ^FR (tarja preta com texto vazado) e a moldura
+         do topo: área sólida numa cabeça térmica gasta sai borrada e
+         o texto vazado vira fantasma — era o pior elemento da etiqueta;
+       - linha "REF: <sku>", longa e sem uso prático; no lugar entra a
+         cor por extenso, que é o que a vendedora precisa conferir;
+       - ^BY1 (módulo de 1 dot = 0,125 mm) trocado por 2 dots: barra de
+         1 dot é fina demais pra impressora resolver, que era a causa
+         do leitor não pegar;
+       - a linha de interpretação do próprio ^BC (minúscula) foi
+         desligada e o código passou a ser impresso em corpo 34, pra
+         dar pra digitar à mão quando precisar. */
+    const limpa = s => asciiUpper(String(s||"")).replace(/[\^~]/g,"");
     const bc   = String(p.barcode||"0000").replace(/[\^~]/g,"");
-    const nome = String(p.name||"").slice(0,18).toUpperCase().replace(/[\^~]/g,"");
-    const sku  = String(p.sku||p.barcode||"000").replace(/[\^~]/g,"");
-    const tam  = String(p.size||"").toUpperCase().replace(/[\^~]/g,"");
+    const nome = limpa(p.name).slice(0,20);
+    const cor  = limpa(p.colorName).slice(0,20);
+    const tam  = limpa(p.size);
+
+    // Code128 em modo automático (o "A" no fim do ^BC): "VF" entra no
+    // subconjunto B e os 6 dígitos são comprimidos aos pares no C —
+    // 101 módulos. A 2 dots por módulo dá 202 dots, sobrando ~27 de
+    // cada lado como zona de silêncio (o branco que o leitor exige).
+    const MODULO = 2;
+    const modulos = 11 + 2*11 + 11 + 3*11 + 11 + 13;
+    const xBc = Math.max(4, Math.round((256 - modulos*MODULO) / 2));
+
     return `^XA
 ^PW256
 ^LL400
 ^LH0,0
 ^CI28
 
-^FO5,5^GB246,38,2^FS
-^FO8,8^A0N,14,12^FH^FDVAIDOSA^FS
-^FO8,23^A0N,12,10^FH^FDFASHION^FS
+^FO0,10^A0N,20,18^FB256,1,0,C,0^FDVAIDOSA FASHION^FS
 
-^FO55,46^A0N,9,8^FH^FDPLUS SIZE^FS
+^FO${xBc},40^BY${MODULO},2,90^BCN,90,N,N,N,A^FD${bc}^FS
 
-^FO10,59^GB236,20,20^FS
-^FO10,62^FR^A0N,14,13^FH^FD     VAIDOSA^FS
+^FO0,142^A0N,34,30^FB256,1,0,C,0^FD${bc}^FS
 
-^FO18,87^BY1,2,30^BCN,,Y,N^FD${bc}^FS
+^FO0,190^A0N,24,22^FB256,1,0,C,0^FD${nome}^FS
+^FO0,220^A0N,20,18^FB256,1,0,C,0^FD${cor}^FS
 
-^FO10,132^A0N,12,10^FH^FD${nome}^FS
-^FO10,147^A0N,10,9^FH^FDREF: ${sku}^FS
-
-^FO60,288^A0N,88,78^FH^FD${tam}^FS
-
-^FO5,394^GB8,1,1^FS
-^FO5,392^GB1,8,1^FS
-^FO243,394^GB8,1,1^FS
-^FO250,392^GB1,8,1^FS
+^FO0,262^A0N,110,95^FB256,1,0,C,0^FD${tam}^FS
 
 ^PQ${qtd}
 ^XZ`;
@@ -6808,15 +6831,15 @@
       body{ font-family:Arial,sans-serif; }
       .linha{ width:99mm; height:50mm; display:flex; page-break-after:always; }
       .linha:last-child{ page-break-after:auto; }
-      .etiqueta{ width:33mm; height:50mm; flex-shrink:0; display:flex; flex-direction:column; align-items:center; text-align:center; padding:2mm 1mm; position:relative; background:#fff; }
-      .eti-topo{ border:1px solid #000; width:90%; padding:2px 0; margin-bottom:3px; }
-      .eti-topo-txt{ font-family:Arial,sans-serif; font-weight:900; font-size:10px; text-transform:uppercase; letter-spacing:1px; line-height:1; color:#fff; -webkit-text-stroke:.5px black; }
-      .eti-plus{ font-size:6px; letter-spacing:2px; color:#000; margin-top:1px; font-weight:bold; }
-      .eti-tarja{ background:#000; color:#fff; font-weight:bold; font-size:9px; padding:1px 6px; margin-bottom:2px; }
-      .eti-barcode{ width:90%; height:28px; margin:2px 0 0; }
-      .eti-nome{ font-size:9px; font-weight:bold; text-transform:uppercase; max-width:100%; white-space:nowrap; overflow:hidden; }
-      .eti-ref{ font-size:8px; font-weight:bold; margin-bottom:2px; }
-      .eti-tam{ font-size:24px; font-weight:900; line-height:1; margin-top:auto; }
+      /* Tem que espelhar o CSS da etiqueta lá de cima — este popup é uma
+         janela nova, não herda a folha de estilo do app. */
+      .etiqueta{ width:33mm; height:50mm; flex-shrink:0; display:flex; flex-direction:column; align-items:center; text-align:center; padding:1.5mm 1mm; position:relative; background:#fff; }
+      .eti-marca{ font-family:Arial,sans-serif; font-weight:bold; font-size:7.5px; letter-spacing:.8px; text-transform:uppercase; line-height:1.1; margin-bottom:1.2mm; }
+      .eti-barcode{ width:100%; height:12mm; display:block; }
+      .eti-cod{ font-family:Arial,sans-serif; font-weight:bold; font-size:13px; letter-spacing:1px; line-height:1; margin-top:.4mm; }
+      .eti-nome{ font-size:9px; font-weight:bold; text-transform:uppercase; max-width:100%; white-space:nowrap; overflow:hidden; margin-top:1.4mm; }
+      .eti-cor{ font-size:8.5px; text-transform:uppercase; line-height:1.2; }
+      .eti-tam{ font-size:30px; font-weight:900; line-height:1; margin-top:auto; margin-bottom:1mm; }
       .crop-bl{ position:absolute; bottom:2px; left:2px; width:4px; height:4px; border-bottom:1px solid #000; border-left:1px solid #000; }
       .crop-br{ position:absolute; bottom:2px; right:2px; width:4px; height:4px; border-bottom:1px solid #000; border-right:1px solid #000; }
     `;
@@ -6843,22 +6866,25 @@
   async function imprimirFilaZebra(){
     const etiquetas = document.getElementById("folha-impressao").querySelectorAll(".etiqueta");
 
-    /* Agrupa itens consecutivos iguais para usar ^PQ em vez de N jobs */
+    /* Agrupa itens consecutivos iguais para usar ^PQ em vez de N jobs.
+       A chave é o CÓDIGO DE BARRAS, não nome+tamanho: desde que cor
+       virou campo, "Camisa Lirio G2" existe em várias cores, e agrupar
+       por nome+tamanho juntava peças diferentes num lote só — todas
+       sairiam com o código da primeira. */
     const grupos = [];
     etiquetas.forEach(el=>{
-      const n = el.querySelector(".eti-nome")?.textContent||"";
-      const t = el.querySelector(".eti-tam" )?.textContent||"";
-      const r = (el.querySelector(".eti-ref")?.textContent||"").replace("REF: ","");
+      const cod  = el.querySelector(".eti-cod" )?.textContent.trim() || "";
+      const nome = el.querySelector(".eti-nome")?.textContent || "";
+      const tam  = el.querySelector(".eti-tam" )?.textContent || "";
       const last = grupos[grupos.length-1];
-      if(last && last.n===n && last.t===t){ last.qtd++; }
-      else grupos.push({n,t,r,qtd:1});
+      if(last && last.cod === cod){ last.qtd++; }
+      else grupos.push({ cod, nome, tam, qtd:1 });
     });
 
     let ok=0, erros=0;
     for(const g of grupos){
-      const prod = db.products.find(p=>
-        String(p.sku||"")===g.r || String(p.barcode||"")===g.r
-      ) || { name:g.n, sku:g.r, barcode:g.r, size:g.t };
+      const prod = db.products.find(p => String(p.barcode||"") === g.cod)
+        || { name:g.nome, barcode:g.cod, size:g.tam, colorName:"" };
       try{
         await enviarZPL(gerarZPL(prod, g.qtd));
         ok += g.qtd;
