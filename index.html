@@ -415,6 +415,98 @@
     .statusParcial{color:var(--warn);font-weight:600}
     .statusAberto{color:var(--bad);font-weight:600}
 
+    /* ===== Vendas recentes: resumo clicável + detalhe em drawer =====
+       Antes cada venda ocupava duas linhas de tabela (7 colunas de
+       valores + 4 botões coloridos), repetido dezenas de vezes — a
+       consulta pesava mais na tela que o próprio formulário de venda.
+       Agora a linha mostra só o resumo e tudo o mais abre no painel
+       lateral. Nenhuma ação foi removida, só mudou de lugar. */
+    .saleRow{
+      display:flex;align-items:center;gap:12px;
+      padding:11px 12px;border-bottom:1px solid var(--line);
+      cursor:pointer;transition:background .12s ease;
+    }
+    .saleRow:last-child{border-bottom:none}
+    .saleRow:hover{background:#fdf2f8}
+    .saleRow .srCli{flex:1;min-width:0}
+    .saleRow .srNome{
+      font-weight:600;white-space:nowrap;
+      overflow:hidden;text-overflow:ellipsis;
+    }
+    .saleRow .srData{color:var(--muted);font-size:12px;white-space:nowrap;margin-top:2px}
+    .saleRow .srValor{font-weight:700;white-space:nowrap}
+    .saleRow .srSeta{color:var(--muted);font-size:15px;line-height:1}
+    .chip{
+      display:inline-block;padding:2px 9px;border-radius:999px;
+      font-size:11px;font-weight:700;white-space:nowrap;
+      border:1px solid transparent;
+    }
+    .chipPago{background:#e9f7ef;color:#1f7a3c;border-color:#bfe5cd}
+    .chipParcial{background:#fff5e6;color:#a15c00;border-color:#f2d9ae}
+    .chipAberto{background:#fdeaf2;color:#b8276c;border-color:#f3c2d8}
+
+    /* Drawer de detalhes. O vidro é discreto de propósito: translúcido
+       claro + blur leve, mantendo contraste de texto — não é pra virar
+       a identidade do sistema. */
+    .drawerOverlay{
+      position:fixed;inset:0;z-index:60;
+      background:rgba(24,16,20,.32);
+      visibility:hidden;opacity:0;
+      transition:opacity .18s ease, visibility .18s ease;
+    }
+    .drawerOverlay.open{visibility:visible;opacity:1}
+    .drawer{
+      position:fixed;top:0;right:0;height:100%;
+      width:420px;max-width:92vw;z-index:61;
+      display:flex;flex-direction:column;
+      background:rgba(255,255,255,.88);
+      -webkit-backdrop-filter:blur(18px) saturate(150%);
+      backdrop-filter:blur(18px) saturate(150%);
+      border-left:1px solid rgba(255,255,255,.75);
+      box-shadow:-18px 0 46px rgba(24,16,20,.16);
+      transform:translateX(100%);
+      transition:transform .22s ease;
+    }
+    .drawer.open{transform:translateX(0)}
+    .drawerHead{
+      display:flex;align-items:flex-start;justify-content:space-between;gap:10px;
+      padding:16px 16px 12px;border-bottom:1px solid rgba(0,0,0,.07);
+    }
+    .drawerHead h3{margin:0;font-size:16px;line-height:1.3}
+    .drawerBody{padding:14px 16px;overflow:auto;flex:1;min-height:0}
+    .drawerFoot{
+      padding:12px 16px;border-top:1px solid rgba(0,0,0,.07);
+      background:rgba(255,255,255,.55);position:relative;
+    }
+    .sdLinha{
+      display:flex;justify-content:space-between;gap:12px;
+      padding:7px 0;border-bottom:1px solid rgba(0,0,0,.05);font-size:13px;
+    }
+    .sdLinha:last-child{border-bottom:none}
+    .sdLinha span:first-child{color:var(--muted)}
+    .sdLinha span:last-child{font-weight:600;text-align:right}
+    .sdSecao{
+      font-size:11px;font-weight:800;letter-spacing:.4px;
+      color:var(--accent);text-transform:uppercase;margin:16px 0 4px;
+    }
+    .sdMenu{
+      position:absolute;right:16px;bottom:52px;z-index:2;
+      background:#fff;border:1px solid var(--line);border-radius:10px;
+      box-shadow:0 8px 24px rgba(0,0,0,.14);padding:4px;min-width:170px;
+    }
+    .sdMenu button{
+      display:block;width:100%;text-align:left;border:none;background:none;
+      padding:9px 10px;border-radius:7px;cursor:pointer;font-size:13px;
+    }
+    .sdMenu button:hover{background:#fdeaf2}
+    @media (max-width:520px){
+      .drawer{width:100%;max-width:100%}
+      /* No celular os 4 botões não cabem numa linha só — deixa quebrar
+         em vez de cortar o "⋯" na borda. */
+      .drawerFoot > div{flex-wrap:wrap}
+      .drawerFoot #sd_pgto{flex:1 0 100%}
+    }
+
     /* ===== Etiquetas (Zebra) — design da etiqueta em si preservado
        igual ao ETIQUETAS.HTML original, só a "moldura" ao redor (busca,
        botões) segue os estilos do sistema principal. ===== */
@@ -556,7 +648,7 @@
   <nav>
     <button data-tab="venda" class="active">
       <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z"/></svg>
-      Caixa / PDV
+      Caixa
     </button>
     <button data-tab="produtos">
       <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"/></svg>
@@ -1145,7 +1237,7 @@
 
   <section id="tab-venda" class="grid cols2">
     <div class="card">
-      <h2>Venda (PDV)</h2>
+      <h2>Nova venda</h2>
 
       <div class="row cols3">
         <div>
@@ -1285,15 +1377,14 @@
     </div>
 
     <div class="card" style="display:flex;flex-direction:column">
-      <h2>Vendas recentes</h2>
-      <div style="overflow:auto;flex:1;min-height:0">
-        <table>
-          <thead>
-            <tr><th>Data</th><th>Cliente</th><th>Canal</th><th>Status</th><th class="right">Bruto</th><th class="right">Pago</th><th class="right">Líquido</th></tr>
-          </thead>
-          <tbody id="salesTable"></tbody>
-        </table>
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px">
+        <h2 style="margin:0">Vendas recentes</h2>
+        <button id="btnVerTodasVendas"
+                style="border:none;background:none;color:var(--accent);font-weight:600;font-size:13px;cursor:pointer;padding:4px 2px">
+          Ver todas
+        </button>
       </div>
+      <div id="salesList" style="overflow:auto;flex:1;min-height:0;margin-top:8px"></div>
     </div>
   </section>
 
@@ -1783,6 +1874,21 @@
     <button class="btn bad" id="btnCancelManual">Cancelar</button>
   </div>
 </div>
+
+<!-- Detalhe da venda (drawer lateral). Só apresentação: todas as ações
+     chamam as MESMAS funções que os botões da tabela antiga chamavam. -->
+<div id="saleDrawerOverlay" class="drawerOverlay"></div>
+<aside id="saleDrawer" class="drawer" aria-hidden="true">
+  <div class="drawerHead">
+    <div style="min-width:0">
+      <h3 id="sd_cliente">—</h3>
+      <div id="sd_sub" class="muted small" style="margin-top:3px"></div>
+    </div>
+    <button class="btn small" id="btnCloseDrawer" title="Fechar">✕</button>
+  </div>
+  <div class="drawerBody" id="sd_body"></div>
+  <div class="drawerFoot" id="sd_foot"></div>
+</aside>
 
 <div id="modalPayments" class="modal hide">
   <div class="modalBox">
@@ -5764,68 +5870,185 @@
     return "Aberto";
   }
 
+  /* ===== Vendas recentes =====
+     Divulgação progressiva: a lista mostra só o resumo e o detalhe
+     (com todas as ações) abre num drawer. Nada de lógica de venda
+     mudou aqui — as ações chamam as mesmas funções de sempre
+     (generatePDF / sendWhatsApp / openPaymentModal / deleteSale), com
+     a mesma confirmação antes de excluir. */
+  const VENDAS_RESUMO = 8;
+  let vendasVerTodas = false;
+  let saleDrawerId = null;
+
+  function chipDeStatus(status){
+    return status === "Pago" ? "chipPago"
+         : status === "Parcial" ? "chipParcial"
+         : "chipAberto";
+  }
+
+  // Nome mantido: renderSalesTable() é chamada de renderSale(), do
+  // fluxo de pagamento e da inicialização — trocar o nome espalharia
+  // a mudança sem necessidade.
   function renderSalesTable(){
-    const tb = document.getElementById("salesTable");
-    const list = db.sales.slice(0,80);
-    tb.innerHTML = list.map(s=>{
+    const box = document.getElementById("salesList");
+    const list = vendasVerTodas ? db.sales : db.sales.slice(0, VENDAS_RESUMO);
+
+    const btnVer = document.getElementById("btnVerTodasVendas");
+    btnVer.textContent = vendasVerTodas ? "Ver menos" : "Ver todas";
+    btnVer.style.visibility = db.sales.length > VENDAS_RESUMO ? "visible" : "hidden";
+
+    if(!list.length){
+      box.innerHTML = `<div class="muted small" style="padding:16px 2px">Nenhuma venda lançada ainda.</div>`;
+      return;
+    }
+
+    box.innerHTML = list.map(s=>{
       const c = s.clientId ? findClientById(s.clientId) : null;
       const status = getSalePaymentStatus(s);
-      const statusClass = status === "Pago" ? "statusPago" : (status === "Parcial" ? "statusParcial" : "statusAberto");
-      const totalPago = s.payments ? s.payments.reduce((a,p)=>a+toNum(p.value),0) : 0;
-      
+      const d = new Date(s.date);
+      const data = d.toLocaleDateString("pt-BR", { day:"2-digit", month:"2-digit" });
+      const hora = d.toLocaleTimeString("pt-BR", { hour:"2-digit", minute:"2-digit" });
       return `
-        <tr>
-          <td class="small">${new Date(s.date).toLocaleString("pt-BR")}</td>
-          <td>${escapeHtml(c?.name||"Cliente não informado")}</td>
-          <td>${escapeHtml(s.channel||"Loja")} <span class="muted small">(${escapeHtml(s.priceTier||"Atacado")})</span></td>
-          <td class="${statusClass}">${escapeHtml(status)}</td>
-          <td class="right">${fmtBRL(s.totalBruto)}</td>
-          <td class="right">${fmtBRL(totalPago)}</td>
-          <td class="right">${fmtBRL(s.netReceived||0)}</td>
-        </tr>
-        <tr>
-          <td colspan="7" style="padding:8px 10px;background:#fafbfc;border-bottom:2px solid var(--line)">
-            <div style="display:flex;gap:8px;justify-content:flex-end">
-              <button class="btn small" style="background:#3b82f6;color:#fff;border-color:#3b82f6" data-pdf="${escapeHtml(s.id)}">PDF</button>
-              <button class="btn small" style="background:#10b981;color:#fff;border-color:#10b981" data-whats="${escapeHtml(s.id)}">WhatsApp</button>
-              <button class="btn small warn" data-pay="${escapeHtml(s.id)}">Pgto</button>
-              <button class="btn small bad" data-del="${escapeHtml(s.id)}">Excluir</button>
-            </div>
-          </td>
-        </tr>
-      `;
+        <div class="saleRow" data-sale="${escapeHtml(s.id)}">
+          <div class="srCli">
+            <div class="srNome">${escapeHtml(c?.name || "Cliente não informado")}</div>
+            <div class="srData">${data} • ${hora}</div>
+          </div>
+          <div class="srValor">${fmtBRL(s.totalBruto)}</div>
+          <span class="chip ${chipDeStatus(status)}">${escapeHtml(status)}</span>
+          <span class="srSeta">›</span>
+        </div>`;
     }).join("");
 
-    tb.querySelectorAll("button[data-pdf]").forEach(b=>{
-      b.addEventListener("click", ()=>{
-        const s = db.sales.find(x=>x.id===b.dataset.pdf);
-        if(s) generatePDF(s, false);
-      });
+    box.querySelectorAll(".saleRow").forEach(row=>{
+      row.addEventListener("click", ()=>openSaleDrawer(row.dataset.sale));
     });
 
-    tb.querySelectorAll("button[data-whats]").forEach(b=>{
-      b.addEventListener("click", ()=>{
-        const s = db.sales.find(x=>x.id===b.dataset.whats);
-        if(s) sendWhatsApp(s, false);
-      });
-    });
+    // Mantém o painel em dia quando a lista é redesenhada — ex: depois
+    // de registrar um pagamento, que já chamava renderSalesTable().
+    if(saleDrawerId) renderSaleDrawer();
+  }
 
-    tb.querySelectorAll("button[data-pay]").forEach(b=>{
-      b.addEventListener("click", ()=>{
-        const s = db.sales.find(x=>x.id===b.dataset.pay);
-        if(s) openPaymentModal(s);
-      });
-    });
+  document.getElementById("btnVerTodasVendas").addEventListener("click", ()=>{
+    vendasVerTodas = !vendasVerTodas;
+    renderSalesTable();
+  });
 
-    tb.querySelectorAll("button[data-del]").forEach(b=>{
-      b.addEventListener("click", async ()=>{
-        if(!confirm("Tem certeza? Isso vai devolver os itens ao estoque.")) return;
-        b.disabled = true;
-        await deleteSale(b.dataset.del);
-        b.disabled = false;
-      });
+  function openSaleDrawer(id){
+    saleDrawerId = id;
+    renderSaleDrawer();
+    document.getElementById("saleDrawer").classList.add("open");
+    document.getElementById("saleDrawer").setAttribute("aria-hidden","false");
+    document.getElementById("saleDrawerOverlay").classList.add("open");
+  }
+
+  function closeSaleDrawer(){
+    saleDrawerId = null;
+    document.getElementById("saleDrawer").classList.remove("open");
+    document.getElementById("saleDrawer").setAttribute("aria-hidden","true");
+    document.getElementById("saleDrawerOverlay").classList.remove("open");
+  }
+
+  document.getElementById("btnCloseDrawer").addEventListener("click", closeSaleDrawer);
+  document.getElementById("saleDrawerOverlay").addEventListener("click", closeSaleDrawer);
+  document.addEventListener("keydown", e=>{
+    if(e.key === "Escape" && saleDrawerId) closeSaleDrawer();
+  });
+
+  function renderSaleDrawer(){
+    const s = db.sales.find(x=>x.id === saleDrawerId);
+    if(!s) return closeSaleDrawer();   // venda excluída com o painel aberto
+
+    const c = s.clientId ? findClientById(s.clientId) : null;
+    const v = s.vendedorId ? findVendedorById(s.vendedorId) : null;
+    const status = getSalePaymentStatus(s);
+    const totalPago = s.payments ? s.payments.reduce((a,p)=>a + toNum(p.value), 0) : 0;
+    const restante = toNum(s.totalBruto) - totalPago;
+
+    document.getElementById("sd_cliente").textContent = c?.name || "Cliente não informado";
+    document.getElementById("sd_sub").innerHTML =
+      `${new Date(s.date).toLocaleString("pt-BR")} &nbsp;·&nbsp; Nº ${escapeHtml(s.id.slice(-6).toUpperCase())}`;
+
+    const linha = (rot, val) => `<div class="sdLinha"><span>${rot}</span><span>${val}</span></div>`;
+
+    const itens = (s.items||[]).map(it=>`
+      <div class="sdLinha">
+        <span>${escapeHtml(it.name||"")} <span class="muted">${escapeHtml(it.size||"")} · ×${toNum(it.qty)}</span></span>
+        <span>${fmtBRL(toNum(it.price) * toNum(it.qty))}</span>
+      </div>`).join("");
+
+    const pagamentos = (s.payments||[]).length
+      ? s.payments.map(p=>linha(
+          `${escapeHtml(p.method||"—")}${toNum(p.installments)>1?` ${p.installments}x`:""} <span class="muted">${fmtDataBR(p.date)}</span>`,
+          fmtBRL(p.value)
+        )).join("")
+      : `<div class="muted small" style="padding:6px 0">Nenhum pagamento registrado.</div>`;
+
+    document.getElementById("sd_body").innerHTML = `
+      <div style="margin-bottom:4px"><span class="chip ${chipDeStatus(status)}">${escapeHtml(status)}</span></div>
+
+      <div class="sdSecao">Venda</div>
+      ${linha("Canal", escapeHtml(s.channel||"Loja"))}
+      ${linha("Tabela de preço", escapeHtml(s.priceTier||"Atacado"))}
+      ${s.kind && s.kind !== "Venda" ? linha("Tipo", escapeHtml(s.kind)) : ""}
+      ${v ? linha("Vendedora", escapeHtml(v.name)) : ""}
+      ${c?.phone ? linha("Telefone", escapeHtml(c.phone)) : ""}
+
+      <div class="sdSecao">Valores</div>
+      ${linha("Bruto", fmtBRL(s.totalBruto))}
+      ${toNum(s.discount) > 0 ? linha("Desconto", fmtBRL(s.discount)) : ""}
+      ${linha("Pago", fmtBRL(totalPago))}
+      ${restante > 0.005 ? linha("Restante", `<span style="color:var(--bad)">${fmtBRL(restante)}</span>`) : ""}
+      ${linha("Líquido", fmtBRL(s.netReceived||0))}
+
+      <div class="sdSecao">Itens (${(s.items||[]).length})</div>
+      ${itens || `<div class="muted small" style="padding:6px 0">Sem itens.</div>`}
+
+      <div class="sdSecao">Pagamentos</div>
+      ${pagamentos}
+
+      ${s.note ? `<div class="sdSecao">Observação</div><div class="small" style="padding:6px 0">${escapeHtml(s.note)}</div>` : ""}
+    `;
+
+    // Pagamento em destaque só enquanto falta receber.
+    const emAberto = restante > 0.005;
+    document.getElementById("sd_foot").innerHTML = `
+      <div style="display:flex;gap:8px;align-items:center">
+        <button class="btn ${emAberto ? "ok" : ""}" id="sd_pgto" style="flex:1">
+          ${emAberto ? "Registrar pagamento" : "Pagamentos"}
+        </button>
+        <button class="btn small" id="sd_pdf">PDF</button>
+        <button class="btn small" id="sd_wpp">WhatsApp</button>
+        <button class="btn small" id="sd_mais" title="Mais ações">⋯</button>
+      </div>
+      <div class="sdMenu hide" id="sd_menu">
+        <button id="sd_excluir" style="color:var(--bad);font-weight:600">Excluir venda</button>
+      </div>
+    `;
+
+    document.getElementById("sd_pgto").addEventListener("click", ()=>openPaymentModal(s));
+    document.getElementById("sd_pdf").addEventListener("click",  ()=>generatePDF(s, false));
+    document.getElementById("sd_wpp").addEventListener("click",  ()=>sendWhatsApp(s, false));
+
+    const menu = document.getElementById("sd_menu");
+    document.getElementById("sd_mais").addEventListener("click", e=>{
+      e.stopPropagation();
+      menu.classList.toggle("hide");
+    });
+    document.getElementById("sd_excluir").addEventListener("click", async ()=>{
+      // Mesma confirmação que existia no botão vermelho da tabela.
+      if(!confirm("Tem certeza? Isso vai devolver os itens ao estoque.")) return;
+      const btn = document.getElementById("sd_excluir");
+      btn.disabled = true;
+      await deleteSale(s.id);
+      menu.classList.add("hide");
     });
   }
+
+  // Fecha o menu de "mais ações" ao clicar em qualquer outro lugar.
+  document.addEventListener("click", ()=>{
+    document.getElementById("sd_menu")?.classList.add("hide");
+  });
 
   async function deleteSale(saleId){
     const s = db.sales.find(x=>x.id===saleId);
