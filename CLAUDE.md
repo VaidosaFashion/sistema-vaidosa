@@ -348,4 +348,24 @@ Ao mexer no visual da etiqueta é obrigatório mexer nos **três** lugares: o CS
 
 **Testado sem login**: etiqueta renderizada com produto fake e inspecionada ampliada (marca, barras largas, código grande, nome, cor, tamanho — sem tarja/moldura/REF); ZPL conferido comando a comando, com todos os `^FO` dentro de 256×400 e o barcode centralizado em x=27. **Não testado em papel** — vale imprimir uma e passar o leitor antes de rodar um lote grande.
 
+## PDV: vendas recentes com resumo clicável e drawer de detalhes (2026-08-14)
+
+**No ar.** Pedido detalhado do Kennedy (briefing longo, com escopo e restrições explícitas). Problema: cada venda ocupava **duas linhas de tabela** — 7 colunas de valores (Data/Cliente/Canal/Status/Bruto/Pago/Líquido) + uma linha só com 4 botões coloridos (PDF, WhatsApp, Pgto, Excluir) — repetido dezenas de vezes. A consulta pesava mais na tela que o formulário de venda.
+
+**Divulgação progressiva**: a linha agora mostra só cliente, data/hora, valor e um **chip** de status; a linha inteira é clicável (hover rosa discreto) e o detalhe abre num **drawer lateral** pela direita, com vidro sutil (`background:rgba(255,255,255,.88)` + `backdrop-filter:blur(18px) saturate(150%)`). Fecha por ✕, overlay ou Esc.
+
+- **Chips**: `chipPago` verde / `chipParcial` âmbar / `chipAberto` rosa. **Atenção: existe o estado "Parcial"** (`getSalePaymentStatus` retorna Pago/Parcial/Aberto) que o briefing não citou — mantido, seria bug perder.
+- **Drawer** mostra tudo que estava na tabela + o que já existia na venda e não aparecia: canal, tabela de preço, tipo (só quando ≠ "Venda"), vendedora, telefone, bruto/desconto/pago/**restante**/líquido, **itens** e **pagamentos**.
+- **Ações preservadas, só mudaram de lugar**: pagamento/PDF/WhatsApp no rodapé, "Registrar pagamento" em destaque **apenas enquanto falta receber** (vira "Pagamentos" sem destaque quando quitada); **Excluir** saiu do vermelho permanente e foi pro menu "⋯", com o **mesmo `confirm()`** de antes.
+- **Lista limitada a 8** (`VENDAS_RESUMO`) com botão "Ver todas" que alterna pro que já está em `db.sales` — **não existe página de histórico de vendas** no sistema (a aba Relatórios é relatório mensal agregado, não listagem por venda), e o briefing pedia pra não criar uma estrutura nova sem avisar. O toggle não cria página/rota/consulta nova; se um dia quiser histórico de verdade com filtros, é outro trabalho.
+- **Renomes**: "Caixa / PDV" → "Caixa"; "Venda (PDV)" → "Nova venda".
+
+**Nenhuma lógica de negócio tocada** — verificado por `git diff`: `generatePDF`, `sendWhatsApp`, `openPaymentModal`, `deleteSale`, `getSalePaymentStatus`, `btnFinalize`, `create_sale`, `saleTotals`, `applyStockEntry` e `btnAddPayment` aparecem no diff **só como chamada**, nunca como definição. O nome `renderSalesTable()` foi mantido de propósito (é chamada de `renderSale()`, do fluxo de pagamento e da inicialização) — e ela agora chama `renderSaleDrawer()` quando o painel está aberto, o que mantém o detalhe em dia depois de registrar um pagamento sem mexer no fluxo de pagamento.
+
+**Testado sem login** (`db.sales` fake com venda aberta, paga e parcial): renderização e limite, chips, toggle "Ver todas", conteúdo do drawer, valores batendo com o cálculo da tabela antiga, Esc/overlay, e — o mais importante — **espiões nas funções existentes** confirmaram `generatePDF(s,false)`, `sendWhatsApp(s,false)`, `openPaymentModal(s)` e `deleteSale(id)` sendo chamadas com os mesmos argumentos, com `confirm()` disparando antes de excluir e **nada sendo excluído quando o confirm é recusado**. Sem overflow horizontal em 375px e 1440px.
+
+**Falta validar com login** (não dá pra fazer sem o PIN do Kennedy): lançar uma venda nova de verdade, gerar PDF real, abrir o WhatsApp e registrar um pagamento real.
+
+**Pra reverter**: a branch `feature/pdv-vendas-drawer` tem o trabalho isolado e o merge foi `--no-ff`, então `git revert -m 1 <hash-do-merge>` desfaz tudo de uma vez.
+
 **Nota pra próxima sessão**: os outros loaders (`clients`, `vendedores`, `categorias`, `v_contas`) têm o mesmo padrão sem `.range()` — não corrigidos agora porque nenhum está perto de 1000 linhas (a loja é pequena, 3 usuários), mas é o mesmo bug latente se algum desses crescer muito no futuro. `sales`/`stock_moves`/`movimentacoes` já tinham `.limit()` deliberado (mostram "recentes", não "tudo") — não é a mesma categoria de bug.
