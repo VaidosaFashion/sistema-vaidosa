@@ -368,4 +368,22 @@ Ao mexer no visual da etiqueta é obrigatório mexer nos **três** lugares: o CS
 
 **Pra reverter**: a branch `feature/pdv-vendas-drawer` tem o trabalho isolado e o merge foi `--no-ff`, então `git revert -m 1 <hash-do-merge>` desfaz tudo de uma vez.
 
+## Campo Cliente vira combobox pesquisável (2026-08-14)
+
+**No ar.** O `<select>` nativo de Cliente abria a base inteira (~37 clientes, e crescendo) ocupando meia tela, sem busca. Virou combobox com filtro por **nome, telefone, CPF e CNPJ**.
+
+**Padrão importante usado aqui — vale repetir em qualquer troca de `<select>` por combobox neste projeto:** o `<select id="sale_client">` **continua no DOM, só escondido** (`class="hide"`), e segue sendo a **única fonte do id do cliente**. O input de busca é só a camada visível. Consequência: os 4 pontos que leem `document.getElementById("sale_client").value` (`btnFinalize`, `sendWhatsApp`, `generatePDF` no caminho de orçamento) e a função `renderSaleClientSelect()` **não foram tocados** — zero risco de o vínculo da venda mudar. `setSaleClient(id)` é o único ponto que grava, e dispara `change` no select pra não perder o `syncTrocaWarning()` que já escutava esse evento.
+
+- **Filtragem local**, sem debounce e sem consulta nova: `db.clients` já está inteiro em memória (`loadClientsFromSupabase`) e a base é pequena. Reusa `asciiUpper()` (tira acento + sobe caixa) — nenhuma biblioteca nova.
+- Busca casa **sem acento** ("livia" acha "Lívia") e **sem máscara**: além do texto cru, compara só os dígitos quando o termo tem 3+ dígitos, então "(63) 99985" acha o telefone `63999852487`.
+- Máximo 8 resultados + "Cliente não informado" (que só aparece com a busca vazia). `max-height:264px` com scroll. Teclado ↑↓/Enter, Esc e clique fora.
+- **Texto digitado nunca vira vínculo**: sair do campo sem escolher restaura o nome do cliente que está de fato selecionado no `<select>`.
+- Os 2 pontos que faziam `sale_client.value = ""` (pós-venda e botão Limpar) passaram a chamar `setSaleClient("")` — as únicas 2 linhas de lógica existente alteradas, e só pra o texto visível acompanhar o reset.
+
+**Também nesta sessão**: o card "Vendas recentes" ganhou `align-self:start` (**escopado só nele**, não no `.grid`, que é usado em outras abas) — o grid esticava o card até a altura da coluna da esquerda e sobrava um bloco branco embaixo da lista. `#salesList` ganhou `max-height:70vh` pro caso do "Ver todas".
+
+**Testado sem login** (os 10 itens que o Kennedy listou): busca por nome, parte do nome, sem acento, telefone, CPF, CNPJ e telefone com máscara; "Nenhum cliente encontrado"; nomes parecidos ("elen" traz Elen Lima e Elen Cristina); seleção, troca de cliente e volta pra "não informado" — sempre conferindo que `#sale_client.value` fica com o **id real** (`id-004`, não o texto); teclado, Esc, clique fora; `change` disparando; e os dois resets limpando select e texto juntos. Diff: 154 inserções, **5 remoções, todas de apresentação** — nenhuma linha de cálculo, estoque, pagamento ou persistência.
+
+**Falta validar com login**: lançar uma venda de verdade com cliente selecionado e conferir no banco que `sales.client_id` ficou correto.
+
 **Nota pra próxima sessão**: os outros loaders (`clients`, `vendedores`, `categorias`, `v_contas`) têm o mesmo padrão sem `.range()` — não corrigidos agora porque nenhum está perto de 1000 linhas (a loja é pequena, 3 usuários), mas é o mesmo bug latente se algum desses crescer muito no futuro. `sales`/`stock_moves`/`movimentacoes` já tinham `.limit()` deliberado (mostram "recentes", não "tudo") — não é a mesma categoria de bug.
