@@ -751,7 +751,13 @@
         <button class="btn" id="btnZebraReconectar" style="font-size:11px;padding:3px 10px">Reconectar</button>
       </div>
       <div class="warnBox small" style="margin-bottom:10px">
-        Busque pelo modelo (ex: <b>blusa magnólia</b>) e digite quantas etiquetas quer de cada tamanho, em quantas cores precisar de uma vez só. Imprime num rolo de 32×50mm (3 colunas).
+        Busque pelo modelo (ex: <b>blusa magnólia</b>) e digite quantas etiquetas quer de cada tamanho, em quantas cores precisar de uma vez só. Imprime num rolo de 33×50mm (3 colunas).
+      </div>
+      <div class="infoBox small" style="margin-bottom:10px">
+        <b>Na janela de impressão do Chrome, confira sempre:</b><br>
+        • <b>Margens: Nenhuma</b> &nbsp;•&nbsp; <b>Escala: 100%</b> (não "Ajustar à área de impressão")<br>
+        • Desmarque "Cabeçalhos e rodapés"<br>
+        Com as margens padrão o Chrome encolhe a folha inteira, e aí as etiquetas das pontas saem cortadas e desalinhadas do picote.
       </div>
 
       <div class="row">
@@ -6756,7 +6762,12 @@
       }
     } catch {
       zebraDev = null;
-      zebraSetBadge("warn","Zebra não detectada — usando impressão padrão");
+      // Não é defeito: sem o Zebra Browser Print instalado, a impressão
+      // sai pelo driver normal da impressora, que é inclusive o caminho
+      // certo pra um rolo de 3 etiquetas lado a lado (o envio direto em
+      // ZPL imprime uma etiqueta por vez e desperdiçaria as outras duas
+      // colunas). Texto neutro pra não parecer erro.
+      zebraSetBadge("warn","Imprimindo pelo navegador (3 colunas)");
     }
   }
 
