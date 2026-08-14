@@ -312,4 +312,18 @@ Comportamento resultante: cada bipada lança +1 (ou o que estiver no campo Quant
 
 **Testado sem login**: PDF gerado no navegador com venda fake (8 itens, 2 do mesmo modelo em cores diferentes, observação com acento) e o conteúdo do arquivo lido byte a byte — confirmado cor e código em cada linha, acentos corretos (`preferência`, `não é`, `OBSERVAÇÕES`, `Bordô`, `Goiânia`, `CÓDIGO`), data do pagamento 01/08 (não 31/07), coordenadas de todas as colunas sem sobreposição e dentro da página. O construtor do jsPDF precisou ser envelopado pra interceptar o download (`save` é propriedade **da instância**, não do protótipo — sobrescrever o protótipo não pega).
 
+## Busca de produto cortando em silêncio no PDV e no Estoque (2026-08-13)
+
+**No ar.** Terceiro relato de "sumiu" da mesma semana, mesma família de bug. Kennedy: no Caixa/PDV, "Adicionar manual", buscar pelo nome da blusa **não mostrava** uma das cores — só achou digitando "pistache". Ele mesmo suspeitou certo ("provavelmente está com algum problema igual aquele, com limitação de linha").
+
+**Causa raiz**: `renderManualProductTable()` (PDV) e `renderStockManualProductTable()` (entrada manual de Estoque) faziam `.slice(0,50)` **sem avisar**, sobre `db.products`, que vem do banco ordenado por `created_at desc`. Um modelo com 16 cores × 5 grades = 80 linhas estoura o limite sozinho — e como o corte é depois da ordenação por data, as cores **cadastradas primeiro** eram justamente as que caíam fora. Digitar a cor reduzia o resultado pra menos de 50 e ela reaparecia.
+
+**Reproduzido antes de corrigir** (é a prova do diagnóstico, não suposição): rodando a lógica antiga com 16 cores da "Blusa Corpstash" cadastradas com a Pistache primeiro → 50 linhas retornadas, `antigo_tinhaPistache: false`.
+
+**Corrigido**: limite subiu pra `LIMITE_BUSCA_PRODUTO = 200`, a lista passou a ser ordenada por **nome+cor+grade** (não mais por data de cadastro, que espalhava as cores do mesmo modelo pela lista inteira), e o corte é **sempre anunciado** pelo helper novo `mostrarInfoBusca()` (`Mostrando 200 de 300 resultados — refine a busca`, ou `Nenhum produto encontrado`, ou a contagem simples). Os dois modais ganharam um `<div>` de aviso abaixo do campo de busca, e o placeholder virou "Ex: blusa pistache" (o label antigo dizia "Buscar produto por nome", mas a busca sempre casou cor/SKU/código também).
+
+**O princípio, pra não repetir**: nenhuma busca de produto pode truncar em silêncio. Foram três relatos de "sumiu do nada" nesta semana e os três eram cortes invisíveis — 1000 linhas no loader (`loadProductsFromSupabase`), 20 itens na Etiquetas, 50 aqui. Se precisar limitar, limite e **diga na tela**.
+
+**Ainda com corte silencioso, avaliados e deixados de propósito**: `db.sales.slice(0,80)` (vendas recentes), `db.stockMoves.slice(0,140)` (movimentações recentes), `db.sales.filter(cliente).slice(0,15)` (histórico do cliente) e os tops de relatório (`slice(0,50)`/`slice(0,10)`) — todos são visões de "recentes"/"top N" por definição, não buscas onde o usuário espera encontrar um item específico. Categoria diferente de bug.
+
 **Nota pra próxima sessão**: os outros loaders (`clients`, `vendedores`, `categorias`, `v_contas`) têm o mesmo padrão sem `.range()` — não corrigidos agora porque nenhum está perto de 1000 linhas (a loja é pequena, 3 usuários), mas é o mesmo bug latente se algum desses crescer muito no futuro. `sales`/`stock_moves`/`movimentacoes` já tinham `.limit()` deliberado (mostram "recentes", não "tudo") — não é a mesma categoria de bug.
