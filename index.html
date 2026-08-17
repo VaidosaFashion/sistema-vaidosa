@@ -1088,10 +1088,16 @@
 
     <div class="card" style="margin-top:20px">
       <h2>Buscar e editar</h2>
-      <div class="row cols2">
+      <div class="row cols3">
         <div>
           <label>Buscar (nome, barcode, SKU)</label>
           <input id="p_search" placeholder="Digite para filtrar..." />
+        </div>
+        <div>
+          <label>Filtrar por cor</label>
+          <!-- populado em renderProducts(), com as cores que existem no
+               catálogo — mesmo padrão do filtro do relatório de estoque -->
+          <select id="p_filter_color"><option value="">Todas</option></select>
         </div>
         <div>
           <label>Filtrar por grade</label>
@@ -3374,6 +3380,7 @@
 
   document.getElementById("p_search").addEventListener("input", renderProducts);
   document.getElementById("p_filter_size").addEventListener("change", renderProducts);
+  document.getElementById("p_filter_color").addEventListener("change", renderProducts);
 
   // Botão EDITAR produto
   document.getElementById("btnEditProduct").addEventListener("click", ()=>{
@@ -3543,8 +3550,22 @@
     const q = document.getElementById("p_search").value.trim().toLowerCase();
     const sizeF = document.getElementById("p_filter_size").value;
 
+    // Popula o filtro de cor com as cores presentes no catálogo (não com
+    // db.colors inteiro, pra não oferecer cor que não daria resultado).
+    // Sempre a partir de db.products completo — se saísse da lista já
+    // filtrada, as opções mudariam a cada tecla digitada na busca.
+    const colorEl = document.getElementById("p_filter_color");
+    const cores = Array.from(new Set(db.products.map(p=>String(p.colorName||"").trim()).filter(Boolean)))
+      .sort((a,b)=>a.localeCompare(b,"pt-BR",{sensitivity:"base"}));
+    const corAtual = colorEl.value;
+    colorEl.innerHTML = `<option value="">Todas</option>` +
+      cores.map(c=>`<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join("");
+    if(cores.includes(corAtual)) colorEl.value = corAtual;
+    const colorF = colorEl.value;
+
     const list = db.products.filter(p=>{
       if(sizeF && p.size!==sizeF) return false;
+      if(colorF && String(p.colorName||"").trim() !== colorF) return false;
       if(!q) return true;
       return (p.name||"").toLowerCase().includes(q)
         || (p.barcode||"").toLowerCase().includes(q)
