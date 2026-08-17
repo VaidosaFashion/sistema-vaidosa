@@ -3647,6 +3647,31 @@
       `;
     }).join("");
 
+    // Estado vazio explicando o motivo. Sem isso, um filtro de cor ou
+    // grade esquecido de uma busca anterior fazia o produto "sumir" sem
+    // nenhuma pista — mesmo problema dos cortes silenciosos de busca.
+    if(!list.length){
+      const ativos = [
+        colorF ? `cor "${escapeHtml(colorF)}"` : "",
+        sizeF  ? `grade ${escapeHtml(sizeF)}`  : ""
+      ].filter(Boolean).join(" e ");
+      const totalNoTermo = q
+        ? db.products.filter(p=>
+            (p.name||"").toLowerCase().includes(q) || (p.barcode||"").toLowerCase().includes(q) ||
+            (p.sku||"").toLowerCase().includes(q)  || (p.colorName||"").toLowerCase().includes(q)).length
+        : db.products.length;
+
+      let msg;
+      if(ativos && totalNoTermo > 0){
+        msg = `Nenhum produto com o filtro de ${ativos}. Sem esse filtro ${totalNoTermo === 1 ? "existe 1 produto" : `existem ${totalNoTermo} produtos`}${q ? " com esse termo" : ""} — coloque os filtros em "Todas" pra ver.`;
+      } else if(ativos){
+        msg = `Nenhum produto encontrado${q ? " com esse termo" : ""} (filtro de ${ativos} ativo).`;
+      } else {
+        msg = q ? "Nenhum produto encontrado com esse termo." : "Nenhum produto cadastrado ainda.";
+      }
+      tb.innerHTML = `<tr><td colspan="12" class="muted small" style="padding:16px">${msg}</td></tr>`;
+    }
+
     // Multi-selecao: clicar em qualquer lugar da linha (fora de
     // select/button/checkbox, que ja tem a propria acao) alterna a marcacao
     // dela, igual clicar direto no checkbox -- pedido do Kennedy, pra nao
