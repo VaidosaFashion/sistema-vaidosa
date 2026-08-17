@@ -6063,11 +6063,22 @@
     msg += `\n━━━━━━━━━━━━━━━━━\n`;
     msg += `Obrigada pela preferência! 💕`;
 
-    // Abrir WhatsApp
+    // Abrir WhatsApp.
+    // O texto vai codificado certo na URL (quebras de linha em %0A,
+    // emoji em UTF-8) — conferido. Mas o app de desktop do WhatsApp
+    // costuma estragar isso ao receber o link do sistema operacional:
+    // junta as linhas e troca emoji por "?". Por isso a mensagem também
+    // vai pra área de transferência: se sair torta, é só colar.
     const url = `https://wa.me/55${cleanPhone}?text=${encodeURIComponent(msg)}`;
     window.open(url, '_blank');
-    
-    toast("WhatsApp aberto","Mensagem formatada e pronta para enviar!");
+
+    if(navigator.clipboard?.writeText){
+      navigator.clipboard.writeText(msg)
+        .then(()=>toast("WhatsApp aberto","Mensagem copiada também — se sair bagunçada, cole com Ctrl+V."))
+        .catch(()=>toast("WhatsApp aberto","Mensagem formatada e pronta para enviar!"));
+    } else {
+      toast("WhatsApp aberto","Mensagem formatada e pronta para enviar!");
+    }
   }
 
   function getSalePaymentStatus(sale){
