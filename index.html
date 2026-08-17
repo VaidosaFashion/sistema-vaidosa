@@ -3571,7 +3571,18 @@
         || (p.barcode||"").toLowerCase().includes(q)
         || (p.sku||"").toLowerCase().includes(q)
         || (p.colorName||"").toLowerCase().includes(q);
-    });
+    })
+    // Ordena modelo -> cor -> grade. Sem isso a lista saía na ordem de
+    // cadastro (created_at desc), que deixava a grade invertida
+    // (G5..G1) e embaralhada entre lotes cadastrados juntos.
+    // etiSizeRank já existe (aba Etiquetas) e trata tamanho fora da
+    // lista padrão jogando pro fim — reusado pra não duplicar a regra.
+    .sort((a,b)=>
+      String(a.name||"").localeCompare(String(b.name||""), "pt-BR", {sensitivity:"base"})
+      || String(a.colorName||"").localeCompare(String(b.colorName||""), "pt-BR", {sensitivity:"base"})
+      || (etiSizeRank(a.size) - etiSizeRank(b.size))
+      || String(a.size||"").localeCompare(String(b.size||""))
+    );
 
     const tb = document.getElementById("prodTable");
     
