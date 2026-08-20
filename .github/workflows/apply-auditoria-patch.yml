@@ -2,7 +2,8 @@ name: apply-auditoria-patch
 on:
   push:
     paths:
-      - ".github/patches/auditoria-2026-08-20.patch"
+      - ".github/patches/**"
+  workflow_dispatch:
 permissions:
   contents: write
 jobs:
@@ -13,10 +14,15 @@ jobs:
       - name: Apply patch, commit real files, clean up
         run: |
           set -euo pipefail
-          git apply .github/patches/auditoria-2026-08-20.patch
-          rm -f .github/patches/auditoria-2026-08-20.patch
+          PATCH_B64=".github/patches/auditoria-2026-08-20.patch.b64"
+          if [ ! -f "$PATCH_B64" ]; then
+            echo "Patch ainda não chegou. Sai sem aplicar."
+            exit 0
+          fi
+          base64 -d "$PATCH_B64" | gunzip > /tmp/auditoria.patch
+          git apply --whitespace=nowarn /tmp/auditoria.patch
+          rm -rf .github/patches
           rm -f .github/workflows/apply-auditoria-patch.yml
-          rmdir .github/patches 2>/dev/null || true
           git config user.name "VaidosaFashion"
           git config user.email "Vaidosa.financeiro@gmail.com"
           git add -A
