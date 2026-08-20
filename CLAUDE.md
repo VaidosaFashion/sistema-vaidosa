@@ -386,4 +386,32 @@ Ao mexer no visual da etiqueta é obrigatório mexer nos **três** lugares: o CS
 
 **Falta validar com login**: lançar uma venda de verdade com cliente selecionado e conferir no banco que `sales.client_id` ficou correto.
 
+## Auditoria externa e correções (2026-08-20)
+
+**No ar, frontend e banco.** Kennedy rodou uma auditoria com outra IA (Grok), que entregou um `index.html` corrigido + a migração `supabase/migrations/20260820124800_fix_auditoria_bugs.sql`. Revisado linha a linha antes de aplicar — e o trabalho era bom, achou coisas reais que eu não tinha visto.
+
+**Primeira coisa verificada, antes de qualquer coisa**: se o `index.html` dele partiu do nosso HEAD ou de uma versão velha. Partiu do nosso (drawer, combobox, filtro de cor, etiqueta e PDF todos intactos) — se fosse de uma versão antiga, aplicar teria apagado semanas de trabalho. **Sempre checar isso antes de aceitar arquivo inteiro de fora.**
+
+**Corrigido no frontend:**
+- **Editar produto gravava o estoque do formulário por cima** (P0). Uma venda no caixa durante a edição era desfeita: "estoque volta no tempo". Em modo edição os campos de grade agora ficam `disabled`, com aviso na tela mandando usar a aba Estoque.
+- **`applyStockEntry` fazia `stock = cache + qtd` sem trava** (P0). Passa a chamar a RPC `apply_stock_entry` (`for update`); se a RPC não existir, cai num **optimistic lock** (`update ... where stock = <valor lido>`, com retry) — o fallback é o que permitiu publicar o frontend antes do SQL.
+- **Loaders sem paginação** (P0): `sales` estava com `.limit(200)` e os demais sem `.range()`. Relatórios, dashboard e histórico do cliente leem `db.sales` inteiro — acima de 200 vendas o faturamento/lucro saía errado **em silêncio**. Helper novo `fetchAllRows(buildQuery, pageSize)` aplicado em products, sales, clients, vendedores, categorias, contas e cores. (Era exatamente o "bug latente" anotado na seção anterior.)
+- **`deleteSale` devolvia estoque e só depois apagava**, sem transação (P1). Agora chama a RPC `delete_sale`; no fallback, **desfaz** o estoque já devolvido se a exclusão falhar no meio.
+- **NCM gravava com ponto** (`6104.42.00`) e a SEFAZ recusa (P1) — `normalizeNcm()` guarda só os 8 dígitos, e o campo aceita colar com ponto.
+- **Datas "só data" usando `toISOString()`** (UTC): depois das 21h no Brasil caíam no dia seguinte. `hojeISOLocal()`, `addDiasDataSo()` e `addMesesDataSo()` no fuso local, com fim de mês preso (31/01 + 1 mês = 28/02, não 03/03).
+- **`btnClearSale` tinha DOIS listeners** — duplicata que eu introduzi ao criar `setSaleClient()`.
+- **`btnFinalize` e `btnAddPayment` sem `try/finally`**: o botão destravava cedo demais e ficava travado em qualquer `return` de erro.
+- **Cor do item** agora aparece no carrinho, drawer, WhatsApp e PDF, via um `corDoItem()` único no escopo global (antes existia só dentro de `generatePDF`).
+
+**Aplicado no banco** (o SQL, ver "armadilha" abaixo):
+- `sales_pay_check` passou a aceitar **`'Misto'`** — a tela oferecia 5 formas de pagamento e o banco só aceitava 4, então toda venda Misto quebrava com erro de constraint.
+- `create_sale` **agrega `qty` por `product_id` antes de travar/checar estoque** — duas linhas do mesmo produto furavam o `for update` (cada uma conferida contra o estoque original, a soma podia passar).
+- `apply_stock_entry` e `delete_sale` criadas.
+
+**Armadilha real do SQL Editor do Supabase, custou várias idas e vindas:** colar o script inteiro (209 linhas) e clicar em Run retornou **"Success. No rows returned"** — e **nada tinha sido aplicado**. Conferido depois: `apply_stock_entry` 0, `delete_sale` 0, constraint ainda sem Misto. **"Success" não é prova de que rodou.** O que funcionou: colar **um bloco por vez** (constraint, depois cada função) e **verificar cada um** com `select ... from pg_proc / pg_constraint`. Outro detalhe: o resultado de `pg_get_constraintdef` sai **cortado** na tela — usar `like '%Misto%' as aceita_misto` pra ter true/false em vez de texto truncado.
+
+**Nota de comunicação**: `pbcopy` não ajuda o Kennedy — ele copia os blocos direto do chat. Colocar o SQL como bloco de código na mensagem, não na área de transferência.
+
+**Ainda em aberto (P2, avaliado e não corrigido)**: `create_sale` é `SECURITY DEFINER`, então uma chamada direta na API poderia furar o estoque. Risco baixo (só 3 pessoas, exige login), mas fica anotado.
+
 **Nota pra próxima sessão**: os outros loaders (`clients`, `vendedores`, `categorias`, `v_contas`) têm o mesmo padrão sem `.range()` — não corrigidos agora porque nenhum está perto de 1000 linhas (a loja é pequena, 3 usuários), mas é o mesmo bug latente se algum desses crescer muito no futuro. `sales`/`stock_moves`/`movimentacoes` já tinham `.limit()` deliberado (mostram "recentes", não "tudo") — não é a mesma categoria de bug.
