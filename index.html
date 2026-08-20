@@ -1005,7 +1005,8 @@
       <div class="row cols2">
         <div>
           <label>NCM</label>
-          <input id="p_ncm" placeholder="Ex: 6104.42.00" />
+          <input id="p_ncm" placeholder="Ex: 61044200" />
+          <div class="muted small" style="margin-top:4px">8 dígitos, sem ponto. Pode colar 6104.42.00 — a gente tira o ponto.</div>
         </div>
         <div>
           <label>CFOP (padrão de venda)</label>
@@ -1047,8 +1048,11 @@
 
       <div class="sep"></div>
       <h2>Estoque por grade</h2>
-      <div class="warnBox small" style="margin-bottom:12px">
+      <div class="warnBox small" style="margin-bottom:12px" id="p_stock_create_hint">
         Informe a quantidade de cada tamanho. Pode deixar 0 se quiser apenas cadastrar o produto agora (sem estoque).
+      </div>
+      <div id="p_stock_edit_hint" class="warnBox small hide" style="margin-bottom:12px">
+        Em edição o estoque não se altera por aqui — use a aba Estoque. Assim uma venda no caixa no mesmo momento não é sobrescrita.
       </div>
 
       <div class="row cols3">
@@ -2388,12 +2392,60 @@
 
   function uid(prefix="id"){ return prefix + "_" + Math.random().toString(16).slice(2) + "_" + Date.now().toString(16); }
   function nowISO(){ return new Date().toISOString(); }
+  // "Hoje" em YYYY-MM-DD no fuso LOCAL. toISOString() é UTC: depois
+  // das 21h no Brasil vira o dia seguinte e o pagamento/conta cai no
+  // dia errado. Usar esta, nunca nowISO().slice(0,10), pra data-só.
+  function hojeISOLocal(){
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+  }
   function toNum(v){ const n = Number(v); return Number.isFinite(n)?n:0; }
   function fmtBRL(n){
     const v = Number(n||0);
     return v.toLocaleString("pt-BR",{style:"currency",currency:"BRL"});
   }
   function escapeHtml(s){ return String(s??"").replace(/[&<>"']/g,m=>({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;" }[m])); }
+
+  // NCM da SEFAZ é 8 dígitos sem pontuação. O placeholder antigo aceitava
+  // "6104.42.00" e gravava com ponto — a nota seria recusada.
+  function normalizeNcm(raw){
+    const d = String(raw??"").replace(/\D/g,"");
+    return d || null;
+  }
+
+  // PostgREST corta em 1000 linhas se a consulta não pedir range.
+  // Qualquer lista que o usuário espera "completa" (não "recentes")
+  // tem que paginar — já quebrou products (1150 linhas, Chemise "sumiu")
+  // e ia quebrar relatórios quando sales passasse de 200.
+  async function fetchAllRows(buildQuery, pageSize=1000){
+    const rows = [];
+    let from = 0;
+    while(true){
+      const { data, error } = await buildQuery().range(from, from + pageSize - 1);
+      if(error) return { error };
+      const batch = data || [];
+      rows.push(...batch);
+      if(batch.length < pageSize) break;
+      from += pageSize;
+    }
+    return { data: rows };
+  }
+
+  function isMissingRpc(error){
+    if(!error) return false;
+    const code = String(error.code||"");
+    const msg = String(error.message||error.details||error.hint||"");
+    return code === "PGRST202" || code === "42883" || /could not find the function|does not exist|schema cache/i.test(msg);
+  }
+
+  function setProductStockFieldsEnabled(on){
+    ["p_stock_g1","p_stock_g2","p_stock_g3","p_stock_g4","p_stock_g5"].forEach(id=>{
+      const el = document.getElementById(id);
+      if(el) el.disabled = !on;
+    });
+    document.getElementById("p_stock_create_hint")?.classList.toggle("hide", !on);
+    document.getElementById("p_stock_edit_hint")?.classList.toggle("hide", on);
+  }
 
   // Buscas de produto: nunca cortar em silêncio. Toda lista que trunca
   // avisa na tela quantos ficaram de fora — cortar calado já causou três
@@ -2482,6 +2534,37 @@
     const [ano, mes, dia] = String(dataStr).slice(0,10).split("-").map(Number);
     return new Date(ano, mes - 1, dia);
   }
+  function isoDataLocal(d){
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+  }
+  // Soma dias numa data-só, sem passar por UTC.
+  function addDiasDataSo(dataStr, dias){
+    const d = parseDataSoLocal(dataStr);
+    d.setDate(d.getDate() + dias);
+    return isoDataLocal(d);
+  }
+  // Soma meses prendendo o dia no último do mês alvo (31/01 + 1 mês = 28/02,
+  // não 03/03). new Date("YYYY-MM-DD") + setMonth + toISOString deslocava
+  // o dia no Brasil e estourava fim de mês.
+  function addMesesDataSo(dataStr, meses){
+    const [ano, mes, dia] = String(dataStr).slice(0,10).split("-").map(Number);
+    const alvoMes = mes - 1 + meses;
+    const ultimo = new Date(ano, alvoMes + 1, 0).getDate();
+    return isoDataLocal(new Date(ano, alvoMes, Math.min(dia, ultimo)));
+  }
+  // Cor do item de venda. sale_items não guarda cor (snapshot anterior ao
+  // campo) — busca no cadastro. Um único lugar, usado no caixa, drawer,
+  // WhatsApp e PDF. Se o item já trouxer colorName (carrinho da venda
+  // atual), usa direto.
+  function corDoItem(it){
+    if(it && it.colorName) return it.colorName;
+    if(!it) return "";
+    const p = db.products.find(x =>
+      (it.productId && x.id === it.productId) ||
+      (it.barcode && String(x.barcode) === String(it.barcode))
+    );
+    return p?.colorName || "";
+  }
 
   let db = loadDB();
   let settings = loadSettings();
@@ -2535,21 +2618,12 @@
     // isso, produto cadastrado depois que o catálogo passa de 1000 linhas
     // simplesmente não carrega (não é apagado, só nunca chega no
     // navegador), e some da busca/estoque/PDV sem nenhum erro visível.
-    const pageSize = 1000;
-    let from = 0;
-    const rows = [];
-    while(true){
-      const { data, error } = await sb.from("products")
-        .select("*, colors(nome)")
-        .order("created_at", { ascending:false })
-        .range(from, from + pageSize - 1);
-      if(error){
-        toast("Erro ao carregar produtos", error.message);
-        return;
-      }
-      rows.push(...data);
-      if(data.length < pageSize) break;
-      from += pageSize;
+    const { data: rows, error } = await fetchAllRows(
+      () => sb.from("products").select("*, colors(nome)").order("created_at", { ascending:false })
+    );
+    if(error){
+      toast("Erro ao carregar produtos", error.message);
+      return;
     }
     // price_atacado/price_varejo/color_id são snake_case ou precisam de
     // achatamento do embed — mapeados aqui pro camelCase que o resto do
@@ -2569,7 +2643,9 @@
      identificar/filtrar nada, é só um rótulo opcional).
   ========================= */
   async function loadColorsFromSupabase(){
-    const { data, error } = await sb.from("colors").select("*").order("nome");
+    const { data, error } = await fetchAllRows(
+      () => sb.from("colors").select("*").order("nome")
+    );
     if(error){
       toast("Erro ao carregar cores", error.message);
       return;
@@ -2675,23 +2751,53 @@
   // Usado pelas duas telas de entrada de estoque (bipar e busca manual) e,
   // com type="DEVOLUCAO", por deleteSale() ao excluir uma venda.
   async function applyStockEntry(p, qty, newCostRaw, note, type="ENTRADA"){
-    const patch = { stock: Math.max(0, toNum(p.stock) + qty) };
-    if(newCostRaw !== "") patch.cost = Math.max(0, toNum(newCostRaw));
+    qty = toNum(qty);
+    const newCost = newCostRaw === "" ? null : Math.max(0, toNum(newCostRaw));
 
-    const { data: updated, error: updErr } = await sb.from("products").update(patch).eq("id", p.id).select().single();
-    if(updErr) return { error: updErr.message };
-    Object.assign(p, updated);
-
-    const { data: move, error: movErr } = await sb.from("stock_moves").insert({
-      type, barcode: p.barcode, product_id: p.id, qty, stock_after: p.stock, note
-    }).select().single();
-    if(movErr) return { error: movErr.message };
-
-    db.stockMoves.unshift({
-      id: move.id, date: move.moved_at, type: move.type, barcode: move.barcode,
-      productId: move.product_id, qty: move.qty, stockAfter: move.stock_after, note: move.note
+    const { data: rpcData, error: rpcErr } = await sb.rpc("apply_stock_entry", {
+      p_product_id: p.id,
+      p_qty: qty,
+      p_type: type,
+      p_note: note || null,
+      p_new_cost: newCost
     });
-    return { ok:true };
+    if(!rpcErr && rpcData){
+      const prod = rpcData.product || {};
+      const move = rpcData.move || {};
+      p.stock = toNum(prod.stock);
+      if(prod.cost != null) p.cost = toNum(prod.cost);
+      if(prod.barcode) p.barcode = prod.barcode;
+      db.stockMoves.unshift({
+        id: move.id, date: move.moved_at, type: move.type, barcode: move.barcode,
+        productId: move.product_id, qty: move.qty, stockAfter: move.stock_after, note: move.note
+      });
+      return { ok:true };
+    }
+    if(rpcErr && !isMissingRpc(rpcErr)) return { error: rpcErr.message };
+
+    // Fallback sem a RPC: optimistic lock (grava só se o stock ainda for o lido).
+    // Duas entradas simultâneas no mesmo SKU não se pisam.
+    for(let tentativa = 0; tentativa < 8; tentativa++){
+      const { data: fresh, error: readErr } = await sb.from("products").select("stock, cost, barcode").eq("id", p.id).single();
+      if(readErr) return { error: readErr.message };
+      const patch = { stock: Math.max(0, toNum(fresh.stock) + qty) };
+      if(newCost != null) patch.cost = newCost;
+      const { data: updated, error: updErr } = await sb.from("products")
+        .update(patch).eq("id", p.id).eq("stock", fresh.stock).select().maybeSingle();
+      if(updErr) return { error: updErr.message };
+      if(!updated) continue;
+      Object.assign(p, updated);
+      const { data: move, error: movErr } = await sb.from("stock_moves").insert({
+        type, barcode: p.barcode, product_id: p.id, qty, stock_after: p.stock, note
+      }).select().single();
+      if(movErr) return { error: movErr.message };
+      db.stockMoves.unshift({
+        id: move.id, date: move.moved_at, type: move.type, barcode: move.barcode,
+        productId: move.product_id, qty: move.qty, stockAfter: move.stock_after, note: move.note
+      });
+      return { ok:true };
+    }
+    return { error: "Estoque ocupado por outra operação. Tente de novo." };
   }
 
   /* =========================
@@ -2723,7 +2829,8 @@
       priceTier: row.price_tier,
       items: (row.sale_items||[]).map(it=>({
         productId: it.product_id, name: it.name, cat: it.cat, fabric: it.fabric,
-        size: it.size, price: it.price, cost: it.cost, qty: it.qty, barcode: it.barcode
+        size: it.size, price: it.price, cost: it.cost, qty: it.qty, barcode: it.barcode,
+        colorName: it.color_name || it.colorName || ""
       })),
       payments: (row.sale_payments||[]).map(p=>({
         id: p.id, date: p.paid_on, value: p.value, method: p.method,
@@ -2734,10 +2841,12 @@
   }
 
   async function loadSalesFromSupabase(){
-    const { data, error } = await sb.from("sales")
-      .select("*, sale_items(*), sale_payments(*)")
-      .order("sold_at", { ascending:false })
-      .limit(200);
+    // Sem .limit(): relatórios, dashboard e histórico do cliente leem db.sales
+    // inteiro. Cortar em 200 fazia faturamento/lucro saírem errados em silêncio.
+    const { data, error } = await fetchAllRows(
+      () => sb.from("sales").select("*, sale_items(*), sale_payments(*)").order("sold_at", { ascending:false }),
+      200
+    );
     if(error){
       toast("Erro ao carregar vendas", error.message);
       return;
@@ -2749,7 +2858,9 @@
      CLIENTES — Supabase
   ========================= */
   async function loadClientsFromSupabase(){
-    const { data, error } = await sb.from("clients").select("*").order("created_at", { ascending:false });
+    const { data, error } = await fetchAllRows(
+      () => sb.from("clients").select("*").order("created_at", { ascending:false })
+    );
     if(error){
       toast("Erro ao carregar clientes", error.message);
       return;
@@ -2764,7 +2875,9 @@
      VENDEDORES — Supabase
   ========================= */
   async function loadVendedoresFromSupabase(){
-    const { data, error } = await sb.from("vendedores").select("*").order("created_at", { ascending:false });
+    const { data, error } = await fetchAllRows(
+      () => sb.from("vendedores").select("*").order("created_at", { ascending:false })
+    );
     if(error){
       toast("Erro ao carregar vendedores", error.message);
       return;
@@ -2790,7 +2903,9 @@
   ];
 
   async function loadCategoriasFromSupabase(){
-    const { data, error } = await sb.from("categorias").select("*").order("nome");
+    const { data, error } = await fetchAllRows(
+      () => sb.from("categorias").select("*").order("nome")
+    );
     if(error){
       toast("Erro ao carregar categorias", error.message);
       return;
@@ -2810,7 +2925,9 @@
   }
 
   async function loadContasFromSupabase(){
-    const { data, error } = await sb.from("v_contas").select("*").order("proximo_vencimento");
+    const { data, error } = await fetchAllRows(
+      () => sb.from("v_contas").select("*").order("proximo_vencimento")
+    );
     if(error){
       toast("Erro ao carregar contas", error.message);
       return;
@@ -3259,9 +3376,14 @@
     if(fabric === "outro") fabric = document.getElementById("p_fabric_outro").value.trim();
 
     // Dados fiscais (NF-e) — capturados uma vez, aplicados a todas as grades do lote
-    const ncm = document.getElementById("p_ncm").value.trim();
+    const ncmRaw = document.getElementById("p_ncm").value.trim();
+    const ncm = normalizeNcm(ncmRaw);
+    if(ncmRaw && (!ncm || ncm.length !== 8)){
+      return toast("NCM inválido","NCM tem que ter 8 dígitos. Pode colar com ponto (6104.42.00) — a gente tira. Deixe em branco se ainda não tiver.");
+    }
+    document.getElementById("p_ncm").value = ncm || "";
     const cfop = document.getElementById("p_cfop").value.trim();
-    const cest = document.getElementById("p_cest").value.trim();
+    const cest = document.getElementById("p_cest").value.trim().replace(/\D/g,"");
     const csosn = document.getElementById("p_csosn").value.trim();
     const origem = document.getElementById("p_origem").value;
     const unidade = document.getElementById("p_unidade").value.trim() || "UN";
@@ -3293,12 +3415,12 @@
       const p = db.products.find(x => x.id === editingProductId);
       if(!p){ btnSave.disabled = false; return toast("Erro","Produto não encontrado."); }
 
-      const newStock = Math.max(0, Math.floor(toNum(document.getElementById(`p_stock_${p.size.toLowerCase()}`).value)));
+      // Estoque NÃO entra no patch — editar produto no meio de uma venda
+      // no caixa sobrescrevia o stock com o número velho do formulário.
       const patch = {
         sku: baseSku ? `${baseSku}-${colorSuffix}-${p.size}` : p.sku,
         name, cat, fabric, cost, note, color_id: colorId,
         price_atacado: priceAtacado, price_varejo: priceVarejo,
-        stock: newStock,
         ncm: ncm || null, cfop: cfop || null, cest: cest || null,
         csosn: csosn || null, origem, unidade
       };
@@ -3355,6 +3477,11 @@
   });
 
   document.getElementById("btnClearProduct").addEventListener("click", clearProductForm);
+  document.getElementById("p_ncm").addEventListener("blur", ()=>{
+    const el = document.getElementById("p_ncm");
+    const n = normalizeNcm(el.value);
+    el.value = n || "";
+  });
   function clearProductForm(){
     ["p_sku","p_name","p_note","p_cost","p_price_atacado","p_price_varejo","p_ncm","p_cest"].forEach(id=>document.getElementById(id).value="");
     ["p_stock_g1","p_stock_g2","p_stock_g3","p_stock_g4","p_stock_g5"].forEach(id=>document.getElementById(id).value="0");
@@ -3376,6 +3503,7 @@
 
     // Resetar modo de edição
     editingProductId = null;
+    setProductStockFieldsEnabled(true);
     document.getElementById("btnAddProduct").textContent = "Gerar códigos e salvar";
     document.getElementById("btnAddProduct").className = "btn ok";
   }
@@ -3433,10 +3561,11 @@
     document.getElementById("p_cor_nova").value = "";
     document.getElementById("p_cor_nova").style.display = "none";
 
-    // Preencher estoque do tamanho específico
+    // Mostra o estoque atual só pra conferência — campos travados.
     ["G1","G2","G3","G4","G5"].forEach(g => document.getElementById(`p_stock_${g.toLowerCase()}`).value = "0");
     document.getElementById(`p_stock_${p.size.toLowerCase()}`).value = p.stock || 0;
-    
+    setProductStockFieldsEnabled(false);
+
     // Mudar botão para modo de edição
     editingProductId = p.id;
     const btn = document.getElementById("btnAddProduct");
@@ -4170,7 +4299,7 @@
     const conta = db.contas.find(c => c.id === id);
     if(!conta) return;
 
-    const hoje = new Date().toISOString().split("T")[0];
+    const hoje = hojeISOLocal();
     const { data: mov, error: movErr } = await sb.from("movimentacoes").insert({
       conta_id: id, tipo: "pagar",
       descricao: `${conta.descricao} - Parcela ${conta.parcelaAtual}/${conta.parcelas}`,
@@ -4184,9 +4313,9 @@
     } else {
       patch.parcela_atual = conta.parcelaAtual + 1;
       if(conta.recorrencia === "semanal"){
-        patch.proximo_vencimento = addWeeks(new Date(conta.proximoVencimento), 1).toISOString().split("T")[0];
+        patch.proximo_vencimento = addDiasDataSo(conta.proximoVencimento, 7);
       } else if(conta.recorrencia === "mensal"){
-        patch.proximo_vencimento = addMonths(new Date(conta.proximoVencimento), 1).toISOString().split("T")[0];
+        patch.proximo_vencimento = addMesesDataSo(conta.proximoVencimento, 1);
       }
     }
 
@@ -4452,7 +4581,7 @@
     document.getElementById("fin_fluxoTotal").textContent = contas.length;
 
     // Ordenar por data
-    contas.sort((a, b) => new Date(a.proximoVencimento) - new Date(b.proximoVencimento));
+    contas.sort((a, b) => String(a.proximoVencimento||"").localeCompare(String(b.proximoVencimento||"")));
 
     // Renderizar tabela
     const tb = document.getElementById("fin_tabelaFluxo");
@@ -4505,7 +4634,7 @@
     const conta = db.contas.find(c => c.id === id);
     if(!conta) return;
 
-    const hoje = new Date().toISOString().split("T")[0];
+    const hoje = hojeISOLocal();
     const { data: mov, error: movErr } = await sb.from("movimentacoes").insert({
       conta_id: id, tipo: "receber", descricao: conta.descricao,
       valor: conta.valor, data: hoje, data_pagamento: hoje, pago: true
@@ -4568,7 +4697,7 @@
     // Adicionar contas que foram concluídas
     db.contas.filter(c => c.status === "concluido").forEach(c => {
       // Buscar movimentação relacionada
-      const mov = db.movimentacoes.filter(m => m.contaId === c.id).sort((a,b) => new Date(b.dataPagamento) - new Date(a.dataPagamento))[0];
+      const mov = db.movimentacoes.filter(m => m.contaId === c.id).sort((a,b) => String(b.dataPagamento||"").localeCompare(String(a.dataPagamento||"")))[0];
       if(mov){
         historico.push({
           id: c.id,
@@ -4590,7 +4719,7 @@
     if(busca) historico = historico.filter(h => h.descricao.toLowerCase().includes(busca));
 
     // Ordenar por data (mais recente primeiro)
-    historico.sort((a, b) => new Date(b.dataPagamento) - new Date(a.dataPagamento));
+    historico.sort((a, b) => String(b.dataPagamento||"").localeCompare(String(a.dataPagamento||"")));
 
     const tb = document.getElementById("fin_tabelaHistorico");
     if(!historico.length){
@@ -4604,7 +4733,7 @@
 
       return `
         <tr>
-          <td>${new Date(h.dataPagamento).toLocaleDateString("pt-BR")}</td>
+          <td>${fmtDataSo(h.dataPagamento)}</td>
           <td style="font-weight:500">${escapeHtml(h.descricao)}</td>
           <td style="color:#64748b;font-weight:500;font-size:13px">${tipoText}</td>
           <td class="small">${escapeHtml(catCliente)}</td>
@@ -5090,7 +5219,7 @@
         `<br><span class="muted small">${escapeHtml(p.cat||"")}${p.fabric?(" | "+escapeHtml(p.fabric)):""}</span>` +
         `<br><span class="muted small">Estoque: ${toNum(p.stock)} | Atacado: ${fmtBRL(p.priceAtacado)} | Varejo: ${fmtBRL(p.priceVarejo)} | Custo: ${fmtBRL(p.cost)}</span>`;
     } else {
-      box.innerHTML = `<b>Múltiplos produtos com esse barcode:</b><br>` + matches.map(p=>`${p.name} (${p.size})`).join(", ");
+      box.innerHTML = `<b>Múltiplos produtos com esse barcode:</b><br>` + matches.map(p=>`${escapeHtml(p.name)} (${escapeHtml(p.size)})`).join(", ");
     }
   });
 
@@ -5772,20 +5901,13 @@
       if(existing.qty + 1 > toNum(p.stock)) return toast("Estoque insuficiente","Já bateu o limite deste item.");
       existing.qty += 1;
     }else{
-      currentSale.items.push({ productId:p.id, name:p.name, cat:(p.cat||""), fabric:(p.fabric||""), size:p.size, price:priceForTier(p, currentPriceTier()), cost:toNum(p.cost), qty:1, barcode:p.barcode });
+      currentSale.items.push({ productId:p.id, name:p.name, cat:(p.cat||""), fabric:(p.fabric||""), size:p.size, price:priceForTier(p, currentPriceTier()), cost:toNum(p.cost), qty:1, barcode:p.barcode, colorName:p.colorName||"" });
     }
     renderSale();
-    toast("Adicionado", `${p.name} (${p.size})`);
+    toast("Adicionado", `${p.name}${p.colorName?(" "+p.colorName):""} (${p.size})`);
   }
 
   document.getElementById("sale_discount").addEventListener("input", renderSaleTotals);
-
-  document.getElementById("btnClearSale").addEventListener("click", ()=>{
-    currentSale = { items:[], finalizedSaleId:null };
-    document.getElementById("overrideTroca").checked = false;
-    toast("Venda limpa","Pronto para nova venda.");
-    renderSale();
-  });
 
   function saleTotals(sale){
     let sub = 0, cost = 0;
@@ -5829,9 +5951,10 @@
     const tb = document.getElementById("saleItems");
     tb.innerHTML = currentSale.items.map((it,idx)=>{
       const total = toNum(it.price)*toNum(it.qty);
+      const cor = corDoItem(it);
       return `
         <tr>
-          <td>${escapeHtml(it.name)}</td>
+          <td><div>${escapeHtml(it.name)}</div>${cor?`<div class="muted small">${escapeHtml(cor)}</div>`:""}</td>
           <td>${escapeHtml(it.size||"")}</td>
           <td class="right">
             <input type="number" min="1" step="1" value="${toNum(it.qty)}" data-qty="${idx}" style="max-width:90px;text-align:right" />
@@ -5898,7 +6021,7 @@
 
     const btn = document.getElementById("btnFinalize");
     btn.disabled = true;
-
+    try {
     // client_request_id: gerado uma vez, reenviado em qualquer retry — é o
     // que faz create_sale() ser seguro contra duplo clique/toque (ver CLAUDE.md).
     const clientRequestId = crypto.randomUUID();
@@ -5916,7 +6039,6 @@
       p_price_tier: currentPriceTier()
     });
 
-    btn.disabled = false;
     if(error) return toast("Falhou", error.message);
 
     // Espelha no cache local o que o servidor já fez de verdade (estoque
@@ -5930,7 +6052,8 @@
 
     const sale = mapSaleFromDb({ ...saleRow, sale_items: currentSale.items.map(it=>({
       product_id: it.productId, name: it.name, cat: it.cat, fabric: it.fabric,
-      size: it.size, price: it.price, cost: it.cost, qty: it.qty, barcode: it.barcode
+      size: it.size, price: it.price, cost: it.cost, qty: it.qty, barcode: it.barcode,
+      colorName: it.colorName || ""
     })), sale_payments: [] });
 
     if(kind === "Troca" && cid && c){
@@ -5962,6 +6085,9 @@
 
     renderSale();
     renderHome();
+    } finally {
+      btn.disabled = false;
+    }
   });
 
   document.getElementById("btnClearSale").addEventListener("click", ()=>{
@@ -6035,7 +6161,8 @@
     msg += `━━━━━━━━━━━━━━━━━\n`;
     saleData.items.forEach(it=>{
       const fabric = it.fabric ? ` - ${it.fabric}` : "";
-      msg += `• ${it.name} (${it.size})${fabric}\n`;
+      const cor = corDoItem(it);
+      msg += `• ${it.name}${cor?(" "+cor):""} (${it.size})${fabric}\n`;
       msg += `  ${it.qty}x ${fmtBRL(it.price)} = ${fmtBRL(toNum(it.price)*toNum(it.qty))}\n`;
     });
     
@@ -6190,11 +6317,14 @@
 
     const linha = (rot, val) => `<div class="sdLinha"><span>${rot}</span><span>${val}</span></div>`;
 
-    const itens = (s.items||[]).map(it=>`
+    const itens = (s.items||[]).map(it=>{
+      const cor = corDoItem(it);
+      return `
       <div class="sdLinha">
-        <span>${escapeHtml(it.name||"")} <span class="muted">${escapeHtml(it.size||"")} · ×${toNum(it.qty)}</span></span>
+        <span>${escapeHtml(it.name||"")}${cor?` <span class="muted">${escapeHtml(cor)}</span>`:""} <span class="muted">${escapeHtml(it.size||"")} · ×${toNum(it.qty)}</span></span>
         <span>${fmtBRL(toNum(it.price) * toNum(it.qty))}</span>
-      </div>`).join("");
+      </div>`;
+    }).join("");
 
     const pagamentos = (s.payments||[]).length
       ? s.payments.map(p=>linha(
@@ -6260,6 +6390,7 @@
       const btn = document.getElementById("sd_excluir");
       btn.disabled = true;
       await deleteSale(s.id);
+      btn.disabled = false;
       menu.classList.add("hide");
     });
   }
@@ -6273,14 +6404,29 @@
     const s = db.sales.find(x=>x.id===saleId);
     if(!s) return toast("Não encontrado","Venda não existe.");
 
-    // Trava contra apagar uma venda que já tem NFC-e AUTORIZADA de verdade —
-    // nfce_emissions tem "on delete cascade" pro caso comum (tentativas de
-    // teste/erro presas numa venda que precisa ser corrigida), mas uma nota
-    // já autorizada é um documento fiscal real: o cliente pode pedir a
-    // segunda via depois, e apagar a venda destruiria esse registro sem
-    // nenhum cancelamento de verdade na SEFAZ. Bloqueia aqui, antes de
-    // qualquer coisa — cancelamento de NFC-e é um recurso futuro (fora do
-    // escopo do v1, ver CLAUDE.md).
+    const barcodes = (s.items||[]).map(it=>it.barcode).filter(Boolean);
+
+    const { error: rpcErr } = await sb.rpc("delete_sale", { p_sale_id: saleId });
+    if(!rpcErr){
+      for(const it of s.items){
+        const p = db.products.find(x=>x.id===it.productId);
+        if(p) p.stock = toNum(p.stock) + toNum(it.qty);
+      }
+      db.sales = db.sales.filter(x=>x.id!==saleId);
+      await loadStockMovesFromSupabase();
+      pushStockToNuvemshop(barcodes);
+      toast("Excluída","Venda removida e estoque devolvido.");
+      renderSale();
+      renderHome();
+      return;
+    }
+    if(!isMissingRpc(rpcErr)){
+      return toast("Não pode excluir", rpcErr.message);
+    }
+
+    // Fallback (RPC ainda não aplicada): trava NFC-e + devolve estoque + apaga.
+    // Se a exclusão falhar no meio, desfaz o que já devolveu — senão o
+    // estoque infla e a venda continua lá.
     const { data: emissaoAutorizada } = await sb
       .from("nfce_emissions")
       .select("numero, chave_acesso")
@@ -6294,18 +6440,30 @@
       );
     }
 
+    const restored = [];
     for(const it of s.items){
       const p = db.products.find(x=>x.id===it.productId);
-      if(p){
-        const result = await applyStockEntry(p, toNum(it.qty), "", "Venda excluída", "DEVOLUCAO");
-        if(result.error) return toast("Falhou ao devolver estoque", result.error);
+      if(!p) continue;
+      const result = await applyStockEntry(p, toNum(it.qty), "", "Venda excluída", "DEVOLUCAO");
+      if(result.error){
+        for(const prev of restored){
+          await applyStockEntry(prev.p, -toNum(prev.qty), "", "Rollback exclusão de venda", "SAIDA");
+        }
+        return toast("Falhou ao devolver estoque", result.error);
       }
+      restored.push({ p, qty: toNum(it.qty) });
     }
 
     const { error } = await sb.from("sales").delete().eq("id", saleId);
-    if(error) return toast("Falhou", error.message);
+    if(error){
+      for(const prev of restored){
+        await applyStockEntry(prev.p, -toNum(prev.qty), "", "Rollback exclusão de venda", "SAIDA");
+      }
+      return toast("Falhou", error.message);
+    }
 
     db.sales = db.sales.filter(x=>x.id!==saleId);
+    pushStockToNuvemshop(barcodes);
     toast("Excluída","Venda removida e estoque devolvido.");
     renderSale();
     renderHome();
@@ -6382,14 +6540,14 @@
 
     const btn = document.getElementById("btnAddPayment");
     btn.disabled = true;
+    try {
     const { data: row, error } = await sb.from("sale_payments").insert({
       sale_id: sale.id,
-      paid_on: document.getElementById("payment_date").value || nowISO().slice(0,10),
+      paid_on: document.getElementById("payment_date").value || hojeISOLocal(),
       value, method, installments,
       fee_pct: feePct, fee_value: feeValue, net_value: netValue,
       note: document.getElementById("payment_note").value.trim()
     }).select().single();
-    btn.disabled = false;
     if(error) return toast("Falhou", error.message);
 
     if(!sale.payments) sale.payments = [];
@@ -6415,6 +6573,9 @@
 
     document.getElementById("payment_value").value = "";
     document.getElementById("payment_note").value = "";
+    } finally {
+      btn.disabled = false;
+    }
   });
 
   function renderPaymentHistory(sale){
@@ -6432,7 +6593,7 @@
       
       return `
         <tr>
-          <td class="small">${escapeHtml(p.date)}</td>
+          <td class="small">${fmtDataBR(p.date)}</td>
           <td class="small">${escapeHtml(methodDisplay)}${installmentsDisplay}</td>
           <td class="right">${fmtBRL(p.value)}</td>
           <td class="right small">${feeDisplay}</td>
@@ -6501,18 +6662,6 @@
       if(doc.getTextWidth(txt) <= maxW) return txt;
       while(txt.length > 1 && doc.getTextWidth(txt + "...") > maxW) txt = txt.slice(0, -1);
       return txt + "...";
-    }
-
-    // Cor não é gravada em sale_items (o snapshot da venda é anterior
-    // ao campo de cor) — busca no cadastro pelo id do produto, com o
-    // barcode como segunda tentativa.
-    function corDoItem(it){
-      if(it.colorName) return it.colorName;
-      const p = db.products.find(x =>
-        (it.productId && x.id === it.productId) ||
-        (it.barcode && String(x.barcode) === String(it.barcode))
-      );
-      return p?.colorName || "";
     }
 
     // Colunas da tabela de itens (x de início; valores monetários
