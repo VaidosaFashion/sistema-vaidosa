@@ -414,4 +414,24 @@ Ao mexer no visual da etiqueta é obrigatório mexer nos **três** lugares: o CS
 
 **Ainda em aberto (P2, avaliado e não corrigido)**: `create_sale` é `SECURITY DEFINER`, então uma chamada direta na API poderia furar o estoque. Risco baixo (só 3 pessoas, exige login), mas fica anotado.
 
+## Taxas configuráveis e forma de pagamento derivada (2026-08-20)
+
+**No ar, frontend e banco.** Veio de uma observação do Kennedy que virou duas correções.
+
+**Observação dele**: "Misto" existia no `<select>` da tela de Nova venda, mas o modal de Registrar pagamento só oferece PIX/Dinheiro/Débito/Crédito. E não podia oferecer mesmo — **cada pagamento tem uma forma só**; Misto é o que resulta de registrar dois. Ele foi além e questionou a duplicação inteira: declarar a forma na venda e de novo no pagamento é fazer a mesma coisa duas vezes, e a primeira ninguém honrava.
+
+**Achado no caminho, e era problema de dinheiro**: as duas telas usavam **tabelas de taxa diferentes**. `calcCardFee` (tela de venda) somava `CARD_FEES.base 2,99% + adicional por parcela`; `btnAddPayment` tinha 2,99/4,99/6,99/8,99 chumbados. Crédito em 3x: a venda mostrava **5,84%** no "Lucro estimado" e o pagamento gravava **6,99%**. O lucro na tela sempre saía maior que o real.
+
+**Resolvido assim:**
+- **Campo "Pagamento" saiu da tela de Nova venda.** A venda nasce `'Pendente'` e `sales.pay` passa a **refletir o que foi pago**: `formaDePagamentoDerivada()` devolve a forma quando há uma só e `'Misto'` quando há duas ou mais, e `sincronizarFormaDePagamento()` grava isso ao registrar cada pagamento. É o que faz o Misto existir de verdade.
+- **`<select id="sale_pay">` continua no DOM, escondido**, com um único `option` `'Pendente'` — mesmo padrão do combobox de cliente. `btnFinalize`, WhatsApp, PDF de orçamento e os filtros de relatório leem `.value` e **não foram tocados**. O bloco de Parcelas da tela de venda também ficou escondido (o PDF de orçamento ainda lê `sale_inst`).
+- **Taxas saíram do código pro banco**: `store_settings.card_fees` (jsonb), editável em **Financeiro › Taxas do cartão** — débito, crédito 1x a 6x e acima de 6x. Motivo dado pelo Kennedy: a taxa da maquininha **muda conforme a loja bate ou não a meta de faturamento**, então não podia ser fixa. `store_settings` já existia no schema desde 2026-08-03 e **nunca tinha sido usada** pelo frontend (que lia `loadSettings()` do localStorage) — aproveitada em vez de criar tabela nova. **jsonb, não uma coluna por parcela**: 10x amanhã não exige migração.
+- **`taxaDoPagamento(method, installments)` é a única fonte de taxa do sistema agora.** `calcCardFee`/`CARD_FEES` continuam no arquivo só porque a tela de venda ainda calcula o preview (que hoje dá 0, já que a venda nasce Pendente) — se for mexer nisso de novo, considerar remover.
+
+**Migração** `supabase/migrations/20260820180000_taxas_cartao_configuraveis.sql`: coluna `card_fees` + linha singleton, e `sales_pay_check` passa a aceitar `'Pendente','Debito','Credito'` **mantendo** `'CartaoAVista'/'CartaoParcelado'` por causa das 73 vendas históricas. Aplicada em 2 blocos separados (ver a armadilha do SQL Editor na seção anterior).
+
+**Degradação graciosa**: o frontend cai em `CARD_FEES_PADRAO` se a coluna não existir, e `sincronizarFormaDePagamento` só loga no console se o check recusar — por isso deu pra publicar o frontend antes do SQL.
+
+**Testado sem login**: tabela de taxas (PIX/Dinheiro = 0, débito, crédito por parcela, acima de 6x), derivação da forma (0 pagamentos = Pendente, 1 = a forma, 2 iguais = a forma, 2 diferentes = Misto), formulário do Financeiro preenchendo e refletindo na taxa calculada, e layout sem overflow. **Falta o Kennedy testar com login**: venda de teste, registrar dois pagamentos de formas diferentes e conferir que a venda vira Misto sozinha.
+
 **Nota pra próxima sessão**: os outros loaders (`clients`, `vendedores`, `categorias`, `v_contas`) têm o mesmo padrão sem `.range()` — não corrigidos agora porque nenhum está perto de 1000 linhas (a loja é pequena, 3 usuários), mas é o mesmo bug latente se algum desses crescer muito no futuro. `sales`/`stock_moves`/`movimentacoes` já tinham `.limit()` deliberado (mostram "recentes", não "tudo") — não é a mesma categoria de bug.
