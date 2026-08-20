@@ -1,0 +1,31 @@
+name: apply-auditoria-patch
+on:
+  push:
+    paths:
+      - ".github/patches/auditoria-2026-08-20.patch"
+permissions:
+  contents: write
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply patch, commit real files, clean up
+        run: |
+          set -euo pipefail
+          git apply .github/patches/auditoria-2026-08-20.patch
+          rm -f .github/patches/auditoria-2026-08-20.patch
+          rm -f .github/workflows/apply-auditoria-patch.yml
+          rmdir .github/patches 2>/dev/null || true
+          git config user.name "VaidosaFashion"
+          git config user.email "Vaidosa.financeiro@gmail.com"
+          git add -A
+          git status
+          git commit -m "$(cat <<'EOF'
+Corrige bugs reais da auditoria: Misto, estoque, data UTC, cor no caixa
+
+SQL em supabase/migrations/20260820124800_fix_auditoria_bugs.sql —
+colar no SQL Editor do Supabase (db push não funciona neste projeto).
+EOF
+)"
+          git push
