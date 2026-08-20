@@ -14,12 +14,15 @@ jobs:
       - name: Apply patch, commit real files, clean up
         run: |
           set -euo pipefail
-          PATCH_B64=".github/patches/auditoria-2026-08-20.patch.b64"
-          if [ ! -f "$PATCH_B64" ]; then
-            echo "Patch ainda não chegou. Sai sem aplicar."
+          A=".github/patches/auditoria-2026-08-20.patch.b64.a"
+          B=".github/patches/auditoria-2026-08-20.patch.b64.b"
+          if [ ! -f "$A" ] || [ ! -f "$B" ]; then
+            echo "Ainda faltam pedaços do patch. Sai sem aplicar."
+            ls -la .github/patches || true
             exit 0
           fi
-          tr -d '\n\r[:space:]' < "$PATCH_B64" | base64 -d | gunzip > /tmp/auditoria.patch
+          cat "$A" "$B" | tr -d '\n\r[:space:]' | base64 -d | gunzip > /tmp/auditoria.patch
+          wc -c /tmp/auditoria.patch
           git apply --whitespace=nowarn /tmp/auditoria.patch
           rm -rf .github/patches
           rm -f .github/workflows/apply-auditoria-patch.yml
