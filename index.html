@@ -151,6 +151,7 @@
     .row > *{min-width:0}
     @media(min-width:680px){.row.cols2{grid-template-columns:1fr 1fr}.row.cols3{grid-template-columns:1fr 1fr 1fr}}
     @media(min-width:900px){.row.cols4{grid-template-columns:1fr 1fr 1fr 1fr}}
+    @media(min-width:900px){.row.cols5{grid-template-columns:repeat(5,1fr)}}
     label{font-size:13px;color:var(--muted);display:block;margin-bottom:6px;font-weight:500}
     input,select,textarea{
       width:100%;
@@ -1303,23 +1304,12 @@
         </div>
       </div>
 
-      <div class="row cols3" style="margin-top:10px">
+      <div class="row cols2" style="margin-top:10px">
         <div>
           <label>Tipo</label>
           <select id="sale_kind">
             <option value="Venda">Venda</option>
             <option value="Troca">Troca</option>
-          </select>
-        </div>
-
-        <div>
-          <label>Pagamento</label>
-          <select id="sale_pay">
-            <option value="PIX">PIX</option>
-            <option value="Dinheiro">Dinheiro</option>
-            <option value="CartaoAVista">Cartão (à vista)</option>
-            <option value="CartaoParcelado">Cartão (parcelado 2x a 6x)</option>
-            <option value="Misto">Misto</option>
           </select>
         </div>
 
@@ -1332,11 +1322,22 @@
         </div>
       </div>
 
+      <!-- A forma de pagamento deixou de ser digitada aqui: ela é
+           preenchida pelo que for de fato registrado em "Registrar
+           pagamento" (uma forma = aquela; duas ou mais = Misto). O
+           select continua no DOM, escondido, porque btnFinalize,
+           WhatsApp, PDF e os relatórios leem .value — mesmo padrão do
+           combobox de cliente. -->
+      <select id="sale_pay" class="hide"><option value="Pendente">Pendente</option></select>
+
       <div id="trocaWarn" class="dangerBox small hide" style="margin-top:10px">
         Atenção: este cliente já tem troca registrada. Pela regra, não pode fazer 2ª troca.
       </div>
 
-      <div class="row cols2" style="margin-top:10px">
+      <!-- Parcelas agora são informadas ao registrar o pagamento, junto
+           com a forma. Mantido escondido: sale_inst ainda é lido pelo
+           PDF/WhatsApp de orçamento. -->
+      <div class="row cols2 hide" style="margin-top:10px">
         <div id="instWrap" class="hide">
           <label>Parcelas</label>
           <select id="sale_inst">
@@ -1412,7 +1413,7 @@
 
       <div class="sep"></div>
       <div class="muted small">
-        Regra do cartão aplicada: taxa fixa 2,99% + adicional do parcelado (2x a 6x). Para PIX/Dinheiro/Misto, taxa automática fica zerada.
+        A venda entra como <b>pendente</b>. A forma de pagamento e a taxa do cartão são definidas ao registrar o pagamento — as taxas você ajusta em <b>Financeiro &rsaquo; Taxas do cartão</b>.
       </div>
     </div>
 
@@ -1539,6 +1540,45 @@
       </div>
 
       <div class="sep"></div>
+
+      <div class="card">
+        <h2>Taxas do cartão</h2>
+        <div class="warnBox small" style="margin-bottom:10px">
+          Percentual que a maquininha desconta. É daqui que o sistema puxa a taxa
+          quando a vendedora registra um pagamento — mude aqui e a próxima venda
+          já usa o valor novo. Vendas já registradas não mudam.
+        </div>
+
+        <div class="row cols3">
+          <div>
+            <label>Débito (%)</label>
+            <input id="fee_debito" type="number" step="0.01" min="0" />
+          </div>
+          <div>
+            <label>Crédito à vista — 1x (%)</label>
+            <input id="fee_credito_1" type="number" step="0.01" min="0" />
+          </div>
+          <div>
+            <label>Crédito acima de 6x (%)</label>
+            <input id="fee_credito_acima" type="number" step="0.01" min="0" />
+          </div>
+        </div>
+
+        <div class="sep"></div>
+        <div class="muted small" style="margin-bottom:6px">Crédito parcelado</div>
+        <div class="row cols5">
+          <div><label>2x (%)</label><input id="fee_credito_2" type="number" step="0.01" min="0" /></div>
+          <div><label>3x (%)</label><input id="fee_credito_3" type="number" step="0.01" min="0" /></div>
+          <div><label>4x (%)</label><input id="fee_credito_4" type="number" step="0.01" min="0" /></div>
+          <div><label>5x (%)</label><input id="fee_credito_5" type="number" step="0.01" min="0" /></div>
+          <div><label>6x (%)</label><input id="fee_credito_6" type="number" step="0.01" min="0" /></div>
+        </div>
+
+        <div class="btns" style="margin-top:12px">
+          <button class="btn ok" id="btnSalvarTaxas">Salvar taxas</button>
+        </div>
+        <div id="taxasInfo" class="muted small" style="margin-top:8px"></div>
+      </div>
 
       <div class="card">
         <h2>Fluxo de Caixa - Visão Mensal</h2>
@@ -3254,7 +3294,7 @@
       renderClients(); 
     }
     if(t==="vendedores") renderVendedores();
-    if(t==="financeiro") renderFinanceiro();
+    if(t==="financeiro"){ renderFinanceiro(); preencherFormTaxas(); }
     if(t==="estoque") renderStock();
     if(t==="venda") renderSale();
     if(t==="relatorios") renderReportDefaults();
@@ -5584,6 +5624,73 @@
 
 
   /* =========================
+     TAXAS DO CARTÃO — configuráveis (store_settings.card_fees)
+     Saíram do código porque a taxa da maquininha muda conforme a loja
+     bate ou não a meta de faturamento — decisão do Kennedy. O padrão
+     abaixo só vale enquanto a coluna card_fees não existir no banco,
+     pra a tela não quebrar antes da migração rodar.
+  ========================= */
+  const CARD_FEES_PADRAO = {
+    debito: 2.99,
+    credito: { 1:4.99, 2:6.99, 3:6.99, 4:6.99, 5:6.99, 6:6.99 },
+    credito_acima: 8.99
+  };
+  let cardFees = JSON.parse(JSON.stringify(CARD_FEES_PADRAO));
+
+  async function loadCardFeesFromSupabase(){
+    const { data, error } = await sb.from("store_settings").select("card_fees").limit(1).maybeSingle();
+    if(error || !data?.card_fees) return;   // sem a coluna ainda: segue no padrão
+    const f = data.card_fees;
+    cardFees = {
+      debito: toNum(f.debito ?? CARD_FEES_PADRAO.debito),
+      credito: Object.assign({}, CARD_FEES_PADRAO.credito, f.credito || {}),
+      credito_acima: toNum(f.credito_acima ?? CARD_FEES_PADRAO.credito_acima)
+    };
+  }
+
+  // Percentual de UMA forma de pagamento. É a única fonte de taxa do
+  // sistema — antes existiam duas tabelas diferentes (a da tela de venda
+  // e a do registro de pagamento), que não batiam entre si.
+  function taxaDoPagamento(method, installments){
+    if(method === "Debito") return toNum(cardFees.debito);
+    if(method !== "Credito") return 0;              // PIX e Dinheiro não têm taxa
+    const n = Math.max(1, Math.floor(toNum(installments) || 1));
+    const tabela = cardFees.credito || {};
+    if(tabela[n] !== undefined) return toNum(tabela[n]);
+    return toNum(cardFees.credito_acima);
+  }
+
+  function preencherFormTaxas(){
+    const set = (id,v)=>{ const el=document.getElementById(id); if(el) el.value = v; };
+    set("fee_debito", cardFees.debito);
+    set("fee_credito_1", cardFees.credito[1]);
+    for(let n=2;n<=6;n++) set("fee_credito_"+n, cardFees.credito[n]);
+    set("fee_credito_acima", cardFees.credito_acima);
+  }
+
+  document.getElementById("btnSalvarTaxas")?.addEventListener("click", async ()=>{
+    const btn = document.getElementById("btnSalvarTaxas");
+    const info = document.getElementById("taxasInfo");
+    const num = id => Math.max(0, toNum(document.getElementById(id).value));
+    const novo = {
+      debito: num("fee_debito"),
+      credito: { 1:num("fee_credito_1"), 2:num("fee_credito_2"), 3:num("fee_credito_3"),
+                 4:num("fee_credito_4"), 5:num("fee_credito_5"), 6:num("fee_credito_6") },
+      credito_acima: num("fee_credito_acima")
+    };
+    btn.disabled = true;
+    const { error } = await sb.from("store_settings").upsert({ id:true, card_fees:novo });
+    btn.disabled = false;
+    if(error){
+      info.textContent = "";
+      return toast("Não salvou", error.message);
+    }
+    cardFees = novo;
+    info.textContent = "Salvo. A próxima venda já usa estas taxas.";
+    toast("Taxas salvas","Valem a partir do próximo pagamento registrado.");
+  });
+
+  /* =========================
      VENDA (PDV)
   ========================= */
   function renderSaleClientSelect(){
@@ -6520,21 +6627,12 @@
     const method = document.getElementById("payment_method").value;
     const installments = method === "Credito" ? Number(document.getElementById("payment_installments").value) : 0;
 
-    // Calcular taxas se for cartão
-    let feeValue = 0;
-    let feePct = 0;
-
-    if(method === "Debito" || method === "Credito"){
-      if(method === "Debito"){
-        feePct = 2.99;
-      } else {
-        // Crédito - taxa varia conforme parcelas
-        if(installments <= 1) feePct = 4.99;
-        else if(installments <= 6) feePct = 6.99;
-        else feePct = 8.99;
-      }
-      feeValue = (value * feePct) / 100;
-    }
+    // Taxa vem de store_settings.card_fees (Financeiro > Taxas do cartão).
+    // Antes estava chumbada aqui E numa segunda tabela na tela de venda,
+    // com percentuais diferentes — o "lucro estimado" da venda não batia
+    // com o que era gravado no pagamento.
+    const feePct = taxaDoPagamento(method, installments);
+    const feeValue = (value * feePct) / 100;
 
     const netValue = value - feeValue; // Valor líquido que vai entrar
 
@@ -6565,6 +6663,8 @@
     sale.netReceived = totalNet;
     sale.profit = totalNet - toNum(sale.costTotal||0);
 
+    await sincronizarFormaDePagamento(sale);
+
     toast("Registrado",`Pagamento de ${fmtBRL(value)} adicionado. ${feeValue > 0 ? `Taxa: ${fmtBRL(feeValue)}` : ""}`);
 
     renderPaymentHistory(sale);
@@ -6577,6 +6677,28 @@
       btn.disabled = false;
     }
   });
+
+  // sales.pay deixou de ser digitado na tela de venda: ele reflete o que
+  // foi de fato pago. Uma forma só -> aquela; duas ou mais -> "Misto".
+  // É isso que faz o "Misto" existir de verdade, em vez de ser uma
+  // declaração na tela que ninguém honrava depois.
+  function formaDePagamentoDerivada(sale){
+    const metodos = [...new Set((sale.payments||[]).map(p=>p.method).filter(Boolean))];
+    if(metodos.length === 0) return "Pendente";
+    if(metodos.length === 1) return metodos[0];
+    return "Misto";
+  }
+
+  async function sincronizarFormaDePagamento(sale){
+    const nova = formaDePagamentoDerivada(sale);
+    if(nova === sale.pay) return;
+    const { error } = await sb.from("sales").update({ pay: nova }).eq("id", sale.id);
+    // Enquanto o SQL novo não rodar, o check antigo recusa 'Pendente' e
+    // 'Debito'/'Credito' — não é motivo pra atrapalhar o pagamento, que
+    // já foi gravado. Só não atualiza o rótulo.
+    if(error){ console.warn("forma de pagamento não sincronizada:", error.message); return; }
+    sale.pay = nova;
+  }
 
   function renderPaymentHistory(sale){
     const tb = document.getElementById("paymentHistory");
@@ -7518,6 +7640,7 @@
     await loadSalesFromSupabase();
     await loadCategoriasFromSupabase();
     await loadContasFromSupabase();
+    await loadCardFeesFromSupabase();
     await loadMovimentacoesFromSupabase();
     setTab("venda");
     renderHome();
