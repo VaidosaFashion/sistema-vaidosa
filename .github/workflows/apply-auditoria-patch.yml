@@ -14,19 +14,12 @@ jobs:
       - name: Apply patch, commit real files, clean up
         run: |
           set -euo pipefail
-          P0=".github/patches/auditoria-2026-08-20.patch.0"
-          P1=".github/patches/auditoria-2026-08-20.patch.1"
-          P2=".github/patches/auditoria-2026-08-20.patch.2"
-          P3=".github/patches/auditoria-2026-08-20.patch.3"
-          missing=0
-          for f in "$P0" "$P1" "$P2" "$P3"; do
-            if [ ! -f "$f" ]; then echo "faltando $f"; missing=1; fi
-          done
-          if [ "$missing" -eq 1 ]; then
-            echo "Ainda faltam pedaços do patch. Sai sem aplicar."
+          PATCH_B64=".github/patches/auditoria-2026-08-20.patch.b64"
+          if [ ! -f "$PATCH_B64" ]; then
+            echo "Patch ainda não chegou. Sai sem aplicar."
             exit 0
           fi
-          cat "$P0" "$P1" "$P2" "$P3" > /tmp/auditoria.patch
+          tr -d '\n\r[:space:]' < "$PATCH_B64" | base64 -d | gunzip > /tmp/auditoria.patch
           git apply --whitespace=nowarn /tmp/auditoria.patch
           rm -rf .github/patches
           rm -f .github/workflows/apply-auditoria-patch.yml
