@@ -509,16 +509,14 @@
       font-size:11px;font-weight:800;letter-spacing:.4px;
       color:var(--accent);text-transform:uppercase;margin:16px 0 4px;
     }
-    .sdMenu{
-      position:absolute;right:16px;bottom:52px;z-index:2;
-      background:#fff;border:1px solid var(--line);border-radius:10px;
-      box-shadow:0 8px 24px rgba(0,0,0,.14);padding:4px;min-width:170px;
+    /* Ações do rodapé em grade, todas visíveis — sem menu escondido. */
+    .sdAcoes{
+      display:grid;grid-template-columns:repeat(4,1fr);
+      gap:6px;margin-top:8px;
     }
-    .sdMenu button{
-      display:block;width:100%;text-align:left;border:none;background:none;
-      padding:9px 10px;border-radius:7px;cursor:pointer;font-size:13px;
-    }
-    .sdMenu button:hover{background:#fdeaf2}
+    .sdAcoes .btn{padding:9px 4px;font-size:12.5px}
+    .sdExcluir{color:var(--bad);border-color:#f3c2c2}
+    .sdExcluir:hover{background:#fdeaea}
     @media (max-width:520px){
       .drawer{width:100%;max-width:100%}
       /* No celular os 4 botões não cabem numa linha só — deixa quebrar
@@ -1975,6 +1973,56 @@
   <div class="drawerFoot" id="sd_foot"></div>
 </aside>
 
+<!-- Edição de venda já lançada. Só metadados: nada que mexa em
+     dinheiro, estoque ou preço. Ver abrirEdicaoVenda(). -->
+<div id="modalEditarVenda" class="modal hide">
+  <div class="modalBox">
+    <h2>Editar venda</h2>
+    <div id="ev_info" class="muted small" style="margin-bottom:10px"></div>
+
+    <div class="warnBox small" style="margin-bottom:12px">
+      Aqui dá pra corrigir quem vendeu, pra quem, por onde veio e a observação.
+      <b>Itens, valores e pagamentos não mudam por aqui</b> — eles mexem em estoque
+      e financeiro. Se a peça ou o valor estiver errado, exclua a venda e lance de novo.
+    </div>
+
+    <div class="row cols2">
+      <div>
+        <label>Cliente</label>
+        <select id="ev_client"></select>
+      </div>
+      <div>
+        <label>Vendedor</label>
+        <select id="ev_vendedor"></select>
+      </div>
+    </div>
+
+    <div class="row cols2" style="margin-top:10px">
+      <div>
+        <label>Canal</label>
+        <select id="ev_channel">
+          <option value="Loja">Loja</option>
+          <option value="Trafego">Tráfego pago</option>
+          <option value="WhatsApp">WhatsApp</option>
+          <option value="Instagram">Instagram</option>
+          <option value="Indicacao">Indicação</option>
+          <option value="Outro">Outro</option>
+        </select>
+      </div>
+      <div>
+        <label>Observação</label>
+        <input id="ev_note" placeholder="Ex: combinado, referência..." />
+      </div>
+    </div>
+
+    <div class="sep"></div>
+    <div class="btns">
+      <button class="btn ok" id="btnSalvarEdicaoVenda">Salvar alterações</button>
+      <button class="btn" id="btnFecharEdicaoVenda">Cancelar</button>
+    </div>
+  </div>
+</div>
+
 <div id="modalPayments" class="modal hide">
   <div class="modalBox">
     <h2>Gerenciar pagamentos</h2>
@@ -2998,6 +3046,76 @@
   let pendingBarcodeForGrade = null;
   let currentPaymentSaleId = null;
   let currentStockEntryProductId = null;
+
+  /* =========================
+     EDITAR VENDA (só metadados)
+     Pedido do Kennedy: vendas lançadas com o canal errado ("as meninas
+     esqueceram e colocaram normal") só podiam ser corrigidas excluindo
+     e lançando tudo de novo.
+     Escopo de propósito estreito — cliente, vendedor, canal e
+     observação. Item, quantidade, preço e tabela ficam de fora porque
+     mexeriam em estoque, taxa e lucro; pra isso o caminho continua
+     sendo excluir e relançar, que já devolve o estoque direito.
+  ========================= */
+  let editandoVendaId = null;
+
+  function abrirEdicaoVenda(sale){
+    editandoVendaId = sale.id;
+    const c = sale.clientId ? findClientById(sale.clientId) : null;
+
+    document.getElementById("ev_info").innerHTML =
+      `Venda <b>Nº ${escapeHtml(sale.id.slice(-6).toUpperCase())}</b> · ${new Date(sale.date).toLocaleString("pt-BR")} · ${fmtBRL(sale.totalBruto)}`;
+
+    // Reaproveita a lista de clientes/vendedores já carregada.
+    document.getElementById("ev_client").innerHTML =
+      '<option value="">Cliente não informado</option>' +
+      db.clients.map(x=>`<option value="${escapeHtml(x.id)}">${escapeHtml(x.name)}</option>`).join("");
+    document.getElementById("ev_vendedor").innerHTML =
+      '<option value="">Vendedor não informado</option>' +
+      db.vendedores.map(x=>`<option value="${escapeHtml(x.id)}">${escapeHtml(x.name)}</option>`).join("");
+
+    document.getElementById("ev_client").value   = sale.clientId || "";
+    document.getElementById("ev_vendedor").value = sale.vendedorId || "";
+    document.getElementById("ev_channel").value  = sale.channel || "Loja";
+    document.getElementById("ev_note").value     = sale.note || "";
+
+    document.getElementById("modalEditarVenda").classList.remove("hide");
+  }
+
+  function fecharEdicaoVenda(){
+    document.getElementById("modalEditarVenda").classList.add("hide");
+    editandoVendaId = null;
+  }
+  document.getElementById("btnFecharEdicaoVenda").addEventListener("click", fecharEdicaoVenda);
+
+  document.getElementById("btnSalvarEdicaoVenda").addEventListener("click", async ()=>{
+    const sale = db.sales.find(x=>x.id === editandoVendaId);
+    if(!sale) return fecharEdicaoVenda();
+
+    const patch = {
+      client_id:   document.getElementById("ev_client").value || null,
+      vendedor_id: document.getElementById("ev_vendedor").value || null,
+      channel:     document.getElementById("ev_channel").value,
+      note:        document.getElementById("ev_note").value.trim()
+    };
+
+    const btn = document.getElementById("btnSalvarEdicaoVenda");
+    btn.disabled = true;
+    const { error } = await sb.from("sales").update(patch).eq("id", sale.id);
+    btn.disabled = false;
+    if(error) return toast("Não salvou", error.message);
+
+    // Espelha no cache local o que já foi gravado no servidor.
+    sale.clientId   = patch.client_id;
+    sale.vendedorId = patch.vendedor_id;
+    sale.channel    = patch.channel;
+    sale.note       = patch.note;
+
+    fecharEdicaoVenda();
+    renderSalesTable();   // redesenha a lista e, se estiver aberto, o painel
+    renderHome();
+    toast("Venda atualizada","Cliente, vendedor, canal e observação salvos.");
+  });
 
   /* =========================
      TAXAS DO CARTÃO
@@ -6466,46 +6584,37 @@
       ${s.note ? `<div class="sdSecao">Observação</div><div class="small" style="padding:6px 0">${escapeHtml(s.note)}</div>` : ""}
     `;
 
-    // Pagamento em destaque só enquanto falta receber.
+    // Rodapé sem menu escondido: as vendedoras não têm familiaridade com
+    // computador e o "⋯" deixava "Excluir venda" invisível pra elas.
+    // Excluir fica à mostra, mas em estilo apagado (texto vermelho, sem
+    // preenchimento) pra não competir com as ações do dia a dia.
     const emAberto = restante > 0.005;
     document.getElementById("sd_foot").innerHTML = `
-      <div style="display:flex;gap:8px;align-items:center">
-        <button class="btn ${emAberto ? "ok" : ""}" id="sd_pgto" style="flex:1">
-          ${emAberto ? "Registrar pagamento" : "Pagamentos"}
-        </button>
-        <button class="btn small" id="sd_pdf">PDF</button>
-        <button class="btn small" id="sd_wpp">WhatsApp</button>
-        <button class="btn small" id="sd_mais" title="Mais ações">⋯</button>
-      </div>
-      <div class="sdMenu hide" id="sd_menu">
-        <button id="sd_excluir" style="color:var(--bad);font-weight:600">Excluir venda</button>
+      <button class="btn ${emAberto ? "ok" : ""}" id="sd_pgto" style="width:100%">
+        ${emAberto ? "Registrar pagamento" : "Pagamentos"}
+      </button>
+      <div class="sdAcoes">
+        <button class="btn" id="sd_editar">Editar</button>
+        <button class="btn" id="sd_pdf">PDF</button>
+        <button class="btn" id="sd_wpp">WhatsApp</button>
+        <button class="btn sdExcluir" id="sd_excluir">Excluir</button>
       </div>
     `;
 
     document.getElementById("sd_pgto").addEventListener("click", ()=>openPaymentModal(s));
     document.getElementById("sd_pdf").addEventListener("click",  ()=>generatePDF(s, false));
     document.getElementById("sd_wpp").addEventListener("click",  ()=>sendWhatsApp(s, false));
-
-    const menu = document.getElementById("sd_menu");
-    document.getElementById("sd_mais").addEventListener("click", e=>{
-      e.stopPropagation();
-      menu.classList.toggle("hide");
-    });
+    document.getElementById("sd_editar").addEventListener("click", ()=>abrirEdicaoVenda(s));
     document.getElementById("sd_excluir").addEventListener("click", async ()=>{
-      // Mesma confirmação que existia no botão vermelho da tabela.
+      // Mesma confirmação de sempre.
       if(!confirm("Tem certeza? Isso vai devolver os itens ao estoque.")) return;
       const btn = document.getElementById("sd_excluir");
       btn.disabled = true;
       await deleteSale(s.id);
       btn.disabled = false;
-      menu.classList.add("hide");
     });
   }
 
-  // Fecha o menu de "mais ações" ao clicar em qualquer outro lugar.
-  document.addEventListener("click", ()=>{
-    document.getElementById("sd_menu")?.classList.add("hide");
-  });
 
   async function deleteSale(saleId){
     const s = db.sales.find(x=>x.id===saleId);
