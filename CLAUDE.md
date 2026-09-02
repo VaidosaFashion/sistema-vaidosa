@@ -435,3 +435,13 @@ Ao mexer no visual da etiqueta é obrigatório mexer nos **três** lugares: o CS
 **Testado sem login**: tabela de taxas (PIX/Dinheiro = 0, débito, crédito por parcela, acima de 6x), derivação da forma (0 pagamentos = Pendente, 1 = a forma, 2 iguais = a forma, 2 diferentes = Misto), formulário do Financeiro preenchendo e refletindo na taxa calculada, e layout sem overflow. **Falta o Kennedy testar com login**: venda de teste, registrar dois pagamentos de formas diferentes e conferir que a venda vira Misto sozinha.
 
 **Nota pra próxima sessão**: os outros loaders (`clients`, `vendedores`, `categorias`, `v_contas`) têm o mesmo padrão sem `.range()` — não corrigidos agora porque nenhum está perto de 1000 linhas (a loja é pequena, 3 usuários), mas é o mesmo bug latente se algum desses crescer muito no futuro. `sales`/`stock_moves`/`movimentacoes` já tinham `.limit()` deliberado (mostram "recentes", não "tudo") — não é a mesma categoria de bug.
+
+## Ícone do app no atalho / aba / favorito (2026-09-02)
+
+**No ar.** O site nunca teve `favicon` nem `manifest` — por isso o atalho do Kennedy no dock aparecia como um quadrado cinza com a letra "V" (o Chrome desenha isso sozinho a partir da inicial do `<title>` quando não acha ícone nenhum).
+
+- Ícone gerado **a partir do monograma VF** recortado de `assets/logo.png` (`crop(385,24,833,321)`), não do logo inteiro — o logo tem "VAIDOSA FASHION PLUS" escrito embaixo, que vira borrão abaixo de ~64px. Fundo **branco sólido**: o monograma é magenta/roxo com transparência e sumiria num dock/aba escuros.
+- Arquivos: `assets/icon-{16,32,180,192,512}.png` (monograma em 74% do quadro), `assets/icon-512-maskable.png` (**55%** do quadro — o Android recorta num círculo de 80% e a ponta do "V" era cortada em 74%; a meia-diagonal precisa ficar ≤40% do canvas), e `favicon.ico` na raiz pra requisição solta de `/favicon.ico`.
+- `manifest.json` na raiz: `name` "Vaidosa Gestão", `short_name` "Vaidosa" (é esse que vira o rótulo do atalho, não o `<title>`, que continua "Vaidosa Gestão Lite"), `display:standalone`, `theme_color` `#b8276c`. **Caminhos relativos de propósito** (`./`, `assets/...`) — o site é um *project page* servido em `/sistema-vaidosa/`, caminho absoluto quebraria.
+- **O atalho que já existe no dock não muda sozinho** — o Chrome congela o ícone no momento da criação. Tem que apagar e criar de novo (⋮ → Transmitir, salvar e compartilhar → Instalar página como app).
+- **Nota de git desta sessão**: o `git push` falhou com 403 porque a conta ativa do `gh` tinha voltado pra `Voecomkennedy`. Resolvido com `gh auth switch -h github.com -u VaidosaFashion`. Se der 403 de novo, é isso — não é permissão perdida no repo.
