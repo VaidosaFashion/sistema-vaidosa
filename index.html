@@ -2523,6 +2523,15 @@
   // Qualquer lista que o usuário espera "completa" (não "recentes")
   // tem que paginar — já quebrou products (1150 linhas, Chemise "sumiu")
   // e ia quebrar relatórios quando sales passasse de 200.
+  // ATENÇÃO: toda consulta paginada aqui PRECISA terminar com um critério de
+  // ordenação ÚNICO (id, ou barcode em products). Paginar com .range() por
+  // cima de uma ordenação com empates é não-determinístico: `created_at` vem
+  // de `now()`, que é o horário da TRANSAÇÃO — as 5 grades de um cadastro
+  // são inseridas num único INSERT e ficam com o timestamp IDÊNTICO. Cada
+  // página é uma consulta separada, e o Postgres não garante a mesma ordem
+  // relativa entre linhas empatadas de uma consulta pra outra. Resultado:
+  // linha repetida numa página e SUMIDA de todas as outras, sem erro nenhum.
+  // Foi isso que fez produto conferido "deixar de bater" depois (07/09/2026).
   async function fetchAllRows(buildQuery, pageSize=1000){
     const rows = [];
     let from = 0;
@@ -2725,7 +2734,7 @@
     // simplesmente não carrega (não é apagado, só nunca chega no
     // navegador), e some da busca/estoque/PDV sem nenhum erro visível.
     const { data: rows, error } = await fetchAllRows(
-      () => sb.from("products").select("*, colors(nome)").order("created_at", { ascending:false })
+      () => sb.from("products").select("*, colors(nome)").order("created_at", { ascending:false }).order("barcode", { ascending:true })
     );
     if(error){
       toast("Erro ao carregar produtos", error.message);
@@ -2750,7 +2759,7 @@
   ========================= */
   async function loadColorsFromSupabase(){
     const { data, error } = await fetchAllRows(
-      () => sb.from("colors").select("*").order("nome")
+      () => sb.from("colors").select("*").order("nome").order("id")
     );
     if(error){
       toast("Erro ao carregar cores", error.message);
@@ -2950,7 +2959,7 @@
     // Sem .limit(): relatórios, dashboard e histórico do cliente leem db.sales
     // inteiro. Cortar em 200 fazia faturamento/lucro saírem errados em silêncio.
     const { data, error } = await fetchAllRows(
-      () => sb.from("sales").select("*, sale_items(*), sale_payments(*)").order("sold_at", { ascending:false }),
+      () => sb.from("sales").select("*, sale_items(*), sale_payments(*)").order("sold_at", { ascending:false }).order("id"),
       200
     );
     if(error){
@@ -2965,7 +2974,7 @@
   ========================= */
   async function loadClientsFromSupabase(){
     const { data, error } = await fetchAllRows(
-      () => sb.from("clients").select("*").order("created_at", { ascending:false })
+      () => sb.from("clients").select("*").order("created_at", { ascending:false }).order("id")
     );
     if(error){
       toast("Erro ao carregar clientes", error.message);
@@ -2982,7 +2991,7 @@
   ========================= */
   async function loadVendedoresFromSupabase(){
     const { data, error } = await fetchAllRows(
-      () => sb.from("vendedores").select("*").order("created_at", { ascending:false })
+      () => sb.from("vendedores").select("*").order("created_at", { ascending:false }).order("id")
     );
     if(error){
       toast("Erro ao carregar vendedores", error.message);
@@ -3010,7 +3019,7 @@
 
   async function loadCategoriasFromSupabase(){
     const { data, error } = await fetchAllRows(
-      () => sb.from("categorias").select("*").order("nome")
+      () => sb.from("categorias").select("*").order("nome").order("id")
     );
     if(error){
       toast("Erro ao carregar categorias", error.message);
@@ -3032,7 +3041,7 @@
 
   async function loadContasFromSupabase(){
     const { data, error } = await fetchAllRows(
-      () => sb.from("v_contas").select("*").order("proximo_vencimento")
+      () => sb.from("v_contas").select("*").order("proximo_vencimento").order("id")
     );
     if(error){
       toast("Erro ao carregar contas", error.message);
