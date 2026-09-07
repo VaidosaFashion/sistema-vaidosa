@@ -790,6 +790,14 @@
         Relatório do que você tem agora, com filtros por modelo, categoria e grade.
       </div>
 
+      <div class="row" style="margin-bottom:10px">
+        <button class="btn" id="btnEstoquePDF">Baixar folha de conferência (PDF)</button>
+        <button class="btn" id="btnEstoqueCSV">Baixar planilha (CSV)</button>
+      </div>
+      <div class="small muted" style="margin:-4px 0 10px">
+        Os dois arquivos respeitam os filtros abaixo. O PDF já vem com espaço pra anotar a contagem.
+      </div>
+
       <div class="row cols4">
         <div>
           <label>Buscar modelo</label>
@@ -1148,6 +1156,7 @@
         <button class="btn warn" id="btnEditProduct" disabled>Editar selecionado</button>
         <button class="btn bad" id="btnDeleteProduct" disabled>Excluir selecionado(s)</button>
         <span class="pill" id="selectedProductPill">Nenhum selecionado</span>
+        <button class="btn" id="btnProdutosCSV">Baixar catálogo (CSV)</button>
       </div>
     </div>
     </div>
@@ -5568,7 +5577,11 @@
   /* =========================
      RELATÓRIO DE ESTOQUE (VISÃO GERAL)
   ========================= */
-  function renderStockReport(){
+  // Agrupamento + filtros do relatorio de estoque, extraidos pra serem a
+  // UNICA fonte tanto da tabela na tela quanto dos arquivos exportados --
+  // sem isso a folha de contagem impressa poderia divergir do que o
+  // Kennedy esta vendo, que e justamente o tipo de furo que ele reportou.
+  function computeStockReport(){
     const qEl = document.getElementById("st_q");
     const catEl = document.getElementById("st_cat");
     const colorEl = document.getElementById("st_color");
@@ -5674,6 +5687,16 @@
 
     groups.sort((a,b)=> (b.total - a.total) || (a.name||"").localeCompare(b.name||"","pt-BR",{sensitivity:"base"}));
 
+    return { groups, size, filtros:{ q, cat, color, size } };
+  }
+
+  function renderStockReport(){
+    const body = document.getElementById("stockReportBody");
+    if(!body) return;
+    const relatorio = computeStockReport();
+    if(!relatorio) return;
+    const { groups, size } = relatorio;
+
     // Com grade filtrada, "quantidade/custo/venda" tem que ser só daquela
     // grade -- senão o KPI e a coluna Total ficam somando os outros
     // tamanhos junto, que é exatamente o que o Kennedy reportou como
@@ -5736,6 +5759,235 @@
       `;
     }).join("");
   }
+
+  /* =========================
+     EXPORTAR ESTOQUE — folha de contagem (PDF) e planilha (CSV)
+     Pedido do Kennedy: baixar o estoque, imprimir e as vendedoras
+     conferirem peca por peca ("como se fosse fazer um balanco").
+     Os dois exportadores consomem computeStockReport(), entao o
+     arquivo respeita os MESMOS filtros que estao na tela.
+  ========================= */
+  const ESTOQUE_GRADES = ["G1","G2","G3","G4","G5"];
+
+  function descricaoDosFiltros(f){
+    const partes = [];
+    if(f.q)     partes.push(`busca "${f.q}"`);
+    if(f.cat)   partes.push(`categoria ${f.cat}`);
+    if(f.color) partes.push(`cor ${f.color}`);
+    if(f.size)  partes.push(`grade ${f.size}`);
+    return partes.length ? partes.join(" · ") : "sem filtro (estoque completo)";
+  }
+
+  function baixarArquivo(conteudo, nome, tipo){
+    const blob = new Blob([conteudo], { type: tipo });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = nome; a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  // Folha de contagem: uma linha por modelo+cor com o que o sistema diz,
+  // e logo abaixo uma linha em branco pra escrever o que foi contado.
+  function baixarContagemPDF(){
+    const relatorio = computeStockReport();
+    if(!relatorio) return;
+    const { groups, size, filtros } = relatorio;
+    if(!groups.length) return toast("Nada pra imprimir","Nenhum produto no filtro atual.");
+
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({ unit:"pt", format:"a4" });
+    const LARG = doc.internal.pageSize.getWidth();
+    const ALT  = doc.internal.pageSize.getHeight();
+    const M = 32;
+    const ROSA = [184, 39, 108];
+
+    // Colunas: Produto | Cor | G1..G5 | Total
+    // Geometria conferida contra a largura util do A4 (595pt - 2x32 de
+    // margem = 531pt): Produto 170 + Cor 85 + 5 grades de 40 + Total 60
+    // fecha em 555pt, dentro da margem direita (563pt). Se mexer nessas
+    // medidas, refazer essa conta -- a coluna TOTAL vazava da pagina.
+    const gradesVisiveis = size ? [size] : ESTOQUE_GRADES;
+    const xProduto = M;
+    const xCor     = M + 170;
+    const xGrade0  = M + 255;
+    const larGrade = 40;
+    const larTotal = 60;
+    const xTotal   = xGrade0 + larGrade*gradesVisiveis.length + 8;
+    let pagina = 0;
+    let y = 0;
+
+    function rodape(){
+      doc.setFont("helvetica","normal"); doc.setFontSize(7.5);
+      doc.setTextColor(130);
+      doc.text("Vaidosa Fashion Plus — folha de conferência de estoque", M, ALT - 20);
+      doc.text(`pg ${pagina}`, LARG - M, ALT - 20, { align:"right" });
+      doc.setTextColor(0);
+    }
+
+    function cabecalho(){
+      if(pagina > 0) rodape();
+      if(pagina > 0) doc.addPage();
+      pagina++;
+      doc.setFont("helvetica","bold"); doc.setFontSize(14);
+      doc.text("Conferência de estoque", M, M + 6);
+
+      doc.setFont("helvetica","normal"); doc.setFontSize(8.5);
+      doc.setTextColor(90);
+      const agora = new Date();
+      doc.text(`Emitido em ${agora.toLocaleDateString("pt-BR")} às ${agora.toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"})}`, M, M + 22);
+      doc.text(`Filtro: ${descricaoDosFiltros(filtros)}`, M, M + 33);
+      doc.setTextColor(0);
+
+      doc.setFontSize(8);
+      doc.text("Confira peça por peça e anote na linha CONTADO. Divergência: avisar o Kennedy antes de corrigir no sistema.", M, M + 46);
+
+      y = M + 60;
+      // faixa de cabecalho da tabela
+      doc.setFillColor(ROSA[0], ROSA[1], ROSA[2]);
+      doc.rect(M, y, LARG - M*2, 16, "F");
+      doc.setTextColor(255); doc.setFont("helvetica","bold"); doc.setFontSize(8);
+      doc.text("PRODUTO", xProduto + 4, y + 11);
+      doc.text("COR", xCor + 4, y + 11);
+      gradesVisiveis.forEach((g,i)=>{
+        doc.text(g, xGrade0 + larGrade*i + larGrade/2, y + 11, { align:"center" });
+      });
+      doc.text("TOTAL", xTotal + larTotal/2, y + 11, { align:"center" });
+      doc.setTextColor(0);
+      y += 16;
+    }
+
+    function fit(txt, larguraMax, tamanho){
+      doc.setFontSize(tamanho);
+      let t = String(txt || "");
+      if(doc.getTextWidth(t) <= larguraMax) return t;
+      while(t.length > 1 && doc.getTextWidth(t + "…") > larguraMax) t = t.slice(0, -1);
+      return t + "…";
+    }
+
+    cabecalho();
+
+    let totalGeral = 0;
+    groups.forEach((g, idx)=>{
+      // cada modelo ocupa 2 linhas (sistema + contado)
+      if(y + 34 > ALT - 40) cabecalho();
+
+      const qtdGrade = sz => (size && size !== sz) ? 0 : toNum(g.sizes[sz] || 0);
+      const total = gradesVisiveis.reduce((a,sz)=>a + qtdGrade(sz), 0);
+      totalGeral += total;
+
+      if(idx % 2 === 0){
+        doc.setFillColor(248, 248, 250);
+        doc.rect(M, y, LARG - M*2, 34, "F");
+      }
+
+      // linha SISTEMA
+      doc.setFont("helvetica","bold"); doc.setTextColor(0);
+      doc.text(fit(g.name, xCor - xProduto - 8, 8.5), xProduto + 4, y + 11);
+      doc.setFont("helvetica","normal"); doc.setFontSize(8);
+      doc.text(fit(g.color || "—", xGrade0 - xCor - 8, 8), xCor + 4, y + 11);
+      gradesVisiveis.forEach((sz,i)=>{
+        doc.text(String(qtdGrade(sz)), xGrade0 + larGrade*i + larGrade/2, y + 11, { align:"center" });
+      });
+      doc.setFont("helvetica","bold");
+      doc.text(String(total), xTotal + larTotal/2, y + 11, { align:"center" });
+
+      // linha CONTADO (quadradinhos em branco pra escrever)
+      doc.setFont("helvetica","normal"); doc.setFontSize(6.5);
+      doc.setTextColor(140);
+      doc.text("CONTADO", xCor + 4, y + 27);
+      doc.setTextColor(0);
+      doc.setDrawColor(190);
+      gradesVisiveis.forEach((sz,i)=>{
+        doc.rect(xGrade0 + larGrade*i + 6, y + 18, larGrade - 12, 13);
+      });
+      doc.rect(xTotal + larTotal/2 - 18, y + 18, 36, 13);
+
+      doc.setDrawColor(225);
+      doc.line(M, y + 34, LARG - M, y + 34);
+      y += 34;
+    });
+
+    if(y + 40 > ALT - 40) cabecalho();
+    doc.setFont("helvetica","bold"); doc.setFontSize(9);
+    doc.text(`${groups.length} modelo(s) · ${totalGeral} peça(s) no sistema`, M, y + 16);
+    doc.setFont("helvetica","normal"); doc.setFontSize(8);
+    doc.text("Conferido por: ______________________________     Data: ____/____/______", M, y + 32);
+    rodape();
+
+    doc.save(`vaidosa_conferencia_estoque_${hojeISOLocal()}.pdf`);
+    toast("Folha gerada", `${groups.length} modelo(s) · ${totalGeral} peça(s). Filtro: ${descricaoDosFiltros(filtros)}.`);
+  }
+
+  // CSV detalhado: uma linha por código de barras (é o nível em que o
+  // estoque existe de verdade no banco), pra abrir no Excel e analisar.
+  function baixarEstoqueCSV(){
+    const relatorio = computeStockReport();
+    if(!relatorio) return;
+    const { groups, filtros } = relatorio;
+    if(!groups.length) return toast("Nada pra exportar","Nenhum produto no filtro atual.");
+
+    // Reconstroi a lista de produtos a partir dos grupos que passaram no
+    // filtro, casando pelo barcode -- assim o CSV cobre exatamente os
+    // mesmos modelos da tela, mas descendo ao nivel de cada grade.
+    const permitidos = new Set();
+    groups.forEach(g => g.barcodes.forEach(b => permitidos.add(String(b))));
+    const linhas = db.products
+      .filter(p => permitidos.has(String(p.barcode)))
+      .filter(p => !filtros.size || String(p.size) === filtros.size)
+      .sort((a,b)=>
+        String(a.name||"").localeCompare(String(b.name||""),"pt-BR",{sensitivity:"base"}) ||
+        String(a.colorName||"").localeCompare(String(b.colorName||""),"pt-BR",{sensitivity:"base"}) ||
+        String(a.size||"").localeCompare(String(b.size||""))
+      );
+
+    const head = ["Codigo","SKU","Produto","Categoria","Tecido","Cor","Grade",
+                  "Estoque","Custo unit","Atacado unit","Varejo unit",
+                  "Total custo","Total atacado","Total varejo","Contado","Diferenca"];
+    const dec = n => toNum(n).toFixed(2).replace(".", ",");   // Excel pt-BR
+    const corpo = linhas.map(p=>{
+      const st = toNum(p.stock);
+      return [
+        p.barcode, p.sku || "", p.name, p.cat || "", p.fabric || "", p.colorName || "", p.size,
+        String(st), dec(p.cost), dec(p.priceAtacado), dec(p.priceVarejo),
+        dec(st * toNum(p.cost)), dec(st * toNum(p.priceAtacado)), dec(st * toNum(p.priceVarejo)),
+        "", ""
+      ];
+    });
+
+    // BOM pro Excel abrir acentuação certa; ";" porque o Excel pt-BR usa
+    // vírgula como separador decimal.
+    const csv = "﻿" + [head, ...corpo]
+      .map(r => r.map(csvFieldNuvemshop).join(";")).join("\r\n");
+    baixarArquivo(csv, `vaidosa_estoque_${hojeISOLocal()}.csv`, "text/csv;charset=utf-8");
+    toast("CSV gerado", `${linhas.length} linha(s). Filtro: ${descricaoDosFiltros(filtros)}.`);
+  }
+
+  // Catalogo completo de Produtos em CSV -- o Kennedy reclamou que nao
+  // dava pra tirar arquivo nem daqui nem do Estoque. Exporta a base
+  // inteira (nao o filtro da busca), que e o caso de uso dele: analisar
+  // o cadastro fora do sistema.
+  document.getElementById("btnProdutosCSV").addEventListener("click", ()=>{
+    if(!db.products.length) return toast("Catálogo vazio","Nenhum produto cadastrado.");
+    const head = ["Codigo","SKU","Produto","Categoria","Tecido","Cor","Grade","Estoque",
+                  "Custo","Atacado","Varejo","NCM","CFOP","CEST","CSOSN","Origem","Unidade","Observacao"];
+    const dec = n => toNum(n).toFixed(2).replace(".", ",");
+    const linhas = [...db.products].sort((a,b)=>
+      String(a.name||"").localeCompare(String(b.name||""),"pt-BR",{sensitivity:"base"}) ||
+      String(a.colorName||"").localeCompare(String(b.colorName||""),"pt-BR",{sensitivity:"base"}) ||
+      String(a.size||"").localeCompare(String(b.size||""))
+    ).map(p=>[
+      p.barcode, p.sku || "", p.name, p.cat || "", p.fabric || "", p.colorName || "", p.size,
+      String(toNum(p.stock)), dec(p.cost), dec(p.priceAtacado), dec(p.priceVarejo),
+      p.ncm || "", p.cfop || "", p.cest || "", p.csosn || "", p.origem || "", p.unidade || "",
+      String(p.note || "").replace(/[\r\n]+/g, " ")
+    ]);
+    const csv = "﻿" + [head, ...linhas].map(r=>r.map(csvFieldNuvemshop).join(";")).join("\r\n");
+    baixarArquivo(csv, `vaidosa_produtos_${hojeISOLocal()}.csv`, "text/csv;charset=utf-8");
+    toast("CSV gerado", `${linhas.length} produto(s) exportado(s).`);
+  });
+
+  document.getElementById("btnEstoquePDF").addEventListener("click", baixarContagemPDF);
+  document.getElementById("btnEstoqueCSV").addEventListener("click", baixarEstoqueCSV);
 
   // listeners de filtro (estoque geral)
   (function bindStockReportFilters(){
