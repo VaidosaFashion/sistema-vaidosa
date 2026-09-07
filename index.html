@@ -420,6 +420,29 @@
       animation:scaleIn .3s ease
     }
     @keyframes scaleIn{from{transform:scale(.9);opacity:0}to{transform:scale(1);opacity:1}}
+    /* Modais que contem tabela de busca de produto: 560px (o padrao, bom
+       pra confirmacao) espremia 7 colunas e obrigava a rolar a barra
+       horizontal pra achar a grade. Variante larga so pra eles -- os
+       modais de confirmacao continuam estreitos. */
+    .modalBox.wide{max-width:1080px}
+    .modalTabela{max-height:min(52vh,440px);overflow:auto}
+    .modalTabela table{width:100%;table-layout:fixed}
+    .modalTabela th,.modalTabela td{overflow-wrap:anywhere}
+    .modalTabela .colProduto{width:auto;min-width:180px}
+    .modalTabela .colCodigo{width:96px}
+    .modalTabela .colGrade{width:72px}
+    .modalTabela .colNum{width:88px}
+    .modalTabela .colBtn{width:124px}
+    /* cabecalho e botao nao podem quebrar em duas linhas ("GRAD/E",
+       "Adiciona/r") -- so o nome do produto e que quebra. */
+    .modalTabela th{white-space:nowrap}
+    .modalTabela .colBtn,.modalTabela td:last-child .btn{white-space:nowrap}
+    @media(max-width:760px){
+      /* Em tela estreita nao tem como caber tudo: libera a rolagem
+         horizontal de novo, mas com largura minima pra tabela nao
+         esmagar as colunas ate ficarem ilegiveis. */
+      .modalTabela table{table-layout:auto;min-width:620px}
+    }
     .modalBox h2{font-size:18px;font-weight:600;margin-bottom:16px;color:var(--txt)}
     .statusPago{color:var(--ok);font-weight:600}
     .statusParcial{color:var(--warn);font-weight:600}
@@ -1953,7 +1976,7 @@
 </div>
 
 <div id="modalManual" class="modal hide">
-  <div class="modalBox">
+  <div class="modalBox wide">
     <h2>Adicionar produto manual</h2>
     <div class="row">
       <div>
@@ -1963,10 +1986,14 @@
     </div>
     <div id="manual_searchInfo" class="muted small" style="margin-top:6px"></div>
     <div class="sep"></div>
-    <div style="max-height:320px;overflow:auto">
+    <div class="modalTabela">
       <table>
+        <colgroup>
+          <col class="colProduto" /><col class="colCodigo" /><col class="colGrade" />
+          <col class="colNum" /><col class="colNum" /><col class="colNum" /><col class="colBtn" />
+        </colgroup>
         <thead>
-          <tr><th>Produto</th><th>Barcode</th><th>Grade</th><th class="right">Estoque</th><th class="right">Atacado</th><th class="right">Varejo</th><th></th></tr>
+          <tr><th>Produto</th><th>Código</th><th>Grade</th><th class="right">Estoque</th><th class="right">Atacado</th><th class="right">Varejo</th><th></th></tr>
         </thead>
         <tbody id="manualProductTable"></tbody>
       </table>
@@ -2109,7 +2136,7 @@
 </div>
 
 <div id="modalStockManual" class="modal hide">
-  <div class="modalBox">
+  <div class="modalBox wide">
     <h2>Entrada manual de estoque</h2>
     <div class="row">
       <div>
@@ -2119,8 +2146,12 @@
     </div>
     <div id="stock_manual_searchInfo" class="muted small" style="margin-top:6px"></div>
     <div class="sep"></div>
-    <div style="max-height:320px;overflow:auto">
+    <div class="modalTabela">
       <table>
+        <colgroup>
+          <col class="colProduto" /><col class="colGrade" />
+          <col class="colNum" /><col class="colNum" /><col class="colBtn" />
+        </colgroup>
         <thead>
           <tr><th>Produto</th><th>Grade</th><th class="right">Estoque atual</th><th class="right">Custo</th><th></th></tr>
         </thead>
@@ -6373,7 +6404,7 @@
             <div class="muted small">${escapeHtml(p.cat||"")}${p.fabric?(" | "+escapeHtml(p.fabric)):""}</div>
           </td>
           <td class="small">${escapeHtml(p.barcode)}</td>
-          <td>${escapeHtml(p.size||"")}</td>
+          <td><b>${escapeHtml(p.size||"")}</b></td>
           <td class="right">${toNum(p.stock)}</td>
           <td class="right">${fmtBRL(p.priceAtacado)}</td>
           <td class="right">${fmtBRL(p.priceVarejo)}</td>
