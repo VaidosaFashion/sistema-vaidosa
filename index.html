@@ -3636,6 +3636,29 @@
       G5: Math.max(0, Math.floor(toNum(document.getElementById("p_stock_g5").value)))
     };
 
+    // Cadastro com TODAS as grades zeradas: quase sempre é engano. Acontece
+    // muito no fluxo de "Clonar", que limpa as quantidades de propósito (a
+    // cor nova vai ter estoque diferente) -- quem clona pra cadastrar a
+    // mesma peça em outra cor troca a cor, salva, e leva 5 linhas zeradas
+    // sem perceber. Foi a causa mais provável de "lançou e não contabilizou"
+    // (Blusa Flora em 3 cores, 31/08/2026). Continua permitido de propósito:
+    // cadastrar o catálogo antes de a mercadoria chegar é caso real.
+    const totalGrades = Object.values(grades).reduce((a,b)=>a+b, 0);
+    if(totalGrades === 0){
+      const corNome = (db.colors.find(c=>c.id===colorId)||{}).nome || "";
+      const ok = confirm(
+        `Nenhuma quantidade preenchida.\n\n` +
+        `"${name}"${corNome ? " / " + corNome : ""} vai ser cadastrado com estoque ZERO em G1, G2, G3, G4 e G5.\n\n` +
+        `Se a mercadoria já chegou, cancele e preencha as quantidades por grade antes de salvar.\n\n` +
+        `Cadastrar zerado mesmo assim?`
+      );
+      if(!ok){
+        btnSave.disabled = false;
+        document.getElementById("p_stock_g1").focus();
+        return;
+      }
+    }
+
     // barcode NÃO é enviado — o Postgres gera pela sequência do servidor
     // (product_barcode_seq), substituindo o contador por dispositivo.
     const rows = Object.entries(grades).map(([size, stock])=>({
