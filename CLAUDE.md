@@ -478,3 +478,23 @@ Ao mexer no visual da etiqueta é obrigatório mexer nos **três** lugares: o CS
 - **Cropped Papoula TEM 20 peças no banco** (3 cores × 5 grades, 06/08), com **zero movimentações** — ou seja, o estoque veio do cadastro inicial e nunca foi vendido nem recebeu entrada. Se a tela mostrava zero, era a paginação; confirmar depois do fix.
 - **Cuidado com a query "detector de furo"**: a versão usada tinha `join lateral` no último movimento, o que **exclui produtos sem nenhuma movimentação** — Papoula caiu justamente nesse caso, então o "0 rows" **não** limpou a base inteira. Pra auditoria completa, usar `left join` e tratar o caso sem movimento.
 - **Estoque inicial do cadastro não gera `stock_moves`** — entra direto na coluna. Não é bug, mas é um buraco no rastro: peça "lançada" pelo cadastro não aparece no histórico de movimentações.
+
+## Cadastro zerado pelo fluxo de "Clonar" (2026-09-07)
+
+**No ar.** Segunda causa encontrada na mesma auditoria (a primeira foi a paginação instável, seção acima).
+
+**Dado que fechou o caso**: `Blusa Flora` / Azul Marinho (cadastrada 20/08) tem **48 peças**; Bege, Bordo e Verde Esmeralda (cadastradas em 31/08, **com minutos de diferença entre si** — 10:11, 10:12, 10:16) estão **todas com 0**. Esse padrão — uma cor cheia e várias cores irmãs zeradas, cadastradas em sequência — é a assinatura do fluxo de "Clonar".
+
+**Mecanismo**: `cloneProductToForm()` chama `clearProductForm()`, que zera as 5 grades **de propósito** (a cor nova tem estoque diferente). Quem clona pra cadastrar a mesma peça em outra cor troca a cor, salva, e leva 5 linhas zeradas sem perceber. O produto **existe**, aparece na busca, e mostra zero — que é exatamente "lançou, o sistema aceitou, mas não contabilizou".
+
+**Corrigido** com um `confirm()` antes do insert quando a soma das 5 grades é 0, dizendo nome + cor. **Continua permitido** — cadastrar catálogo antes de a mercadoria chegar é caso real. Ao cancelar, destrava o botão e joga o foco em `p_stock_g1`.
+
+**Verificado no código, sem bug**: `clearProductForm()` **reabilita** os campos de grade (`setProductStockFieldsEnabled(true)`), então o travamento do modo edição não vaza pro modo criação. Era uma hipótese boa — se vazasse, daria exatamente o mesmo sintoma.
+
+**Notas de teste desta sessão:**
+- `p_price_varejo` é `type="number"` — setar `.value = "89,90"` (vírgula) via JS resulta em **string vazia**, e o cadastro para em "Faltou preço varejo". Em teste, usar ponto. Custou duas rodadas de falso negativo.
+- `sb` é `const` no escopo do script: **`window.sb = stub` NÃO intercepta** as chamadas de dentro do app. No teste o insert foi pro Supabase real e voltou `invalid input syntax for type uuid` (id de cor falso) — ou seja, nada foi gravado, mas o espião de insert não funciona por esse caminho. Pra espionar mutação, interceptar em outro nível.
+
+**Resolvido**: "Peônia" não existia mesmo — o Kennedy confirmou que ainda não cadastrou essa peça; foi engano das vendedoras no relato.
+
+**Detector de furo (versão corrigida, com `left join`) voltou 0 linhas** — nenhum produto com movimentação tem `stock` divergente do último `stock_after`. A integridade do estoque no banco está limpa; os dois problemas eram de carregamento (paginação) e de cadastro (grade zerada), não de corrupção de dado.
