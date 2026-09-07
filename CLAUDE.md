@@ -456,3 +456,25 @@ Ao mexer no visual da etiqueta é obrigatório mexer nos **três** lugares: o CS
 - **Os dois respeitam os filtros da tela** (busca/categoria/cor/grade) — é assim que ele controla o volume de papel. Com grade filtrada, o PDF mostra só aquela coluna.
 - **Produtos › "Baixar catálogo (CSV)"** exporta a base inteira (não o filtro da busca), com os campos fiscais junto — o caso de uso dele ali é analisar o cadastro fora do sistema.
 - **Testado sem login** com catálogo falso: relatório intacto após o refactor (4 grupos, 34 peças), PDF conferido visualmente (acentos, truncagem com "…" em nome e cor longos, totais batendo, colunas dentro da página), CSV do estoque com e sem filtro de grade, CSV de produtos, sem overflow horizontal em 375px e desktop.
+
+## Bug real: paginação instável perdia linhas em silêncio (2026-09-07)
+
+**No ar.** Kennedy: produtos lançados e conferidos "depois não batem mais". Auditoria pedida por ele.
+
+**Primeiro o que foi descartado**: nenhum caminho do frontend zera estoque em silêncio. Os três que escrevem estoque (entrada no Estoque, venda no Caixa, `apply_stock_entry`) estão corretos e todos registram `stock_moves`. Editar produto já não toca em estoque desde 20/08.
+
+**Causa raiz encontrada — vale pros 7 carregadores paginados, não só produtos.** Todos ordenavam por coluna **não-única** (`created_at`, `sold_at`, `nome`, `proximo_vencimento`) e paginavam com `.range()` por cima disso. `products.created_at` vem de `now()`, que é o horário da **transação**: as 5 grades de um cadastro entram num único `INSERT` e ficam com o timestamp **idêntico** (confirmado no dado real: Cropped Papoula G1–G5 todas em "06/08 21:31"). Cada página é uma consulta separada, e o Postgres **não garante** a mesma ordem relativa entre linhas empatadas de uma consulta pra outra. Quando a fronteira da página (linha 1000) cai **dentro** de um grupo empatado, uma linha repete numa página e **some de todas as outras** — sem erro nenhum.
+
+**É intermitente por natureza** — muda a cada carregamento — que é exatamente o sintoma ("confere hoje, não confere amanhã"). Isso o distingue do bug de 13/08 (falta de `.range()`, que cortava sempre nas mesmas 1000 linhas).
+
+**Reproduzido antes de corrigir**, com lotes de tamanho irregular (5 grades, clones, edições avulsas): 0 a 2 produtos sumindo por carregamento na ordenação antiga, sempre 0 com o desempate. Com lotes de tamanho uniforme o bug **não** aparece (a fronteira cai entre grupos) — a primeira simulação deu falso negativo por isso.
+
+**Corrigido** acrescentando um critério de ordenação **único** no fim de cada consulta: `barcode` em products (é sequência, então dentro do lote sai G1→G5), `id` nos demais. Comentário de aviso deixado junto de `fetchAllRows`.
+
+**Regra pra não repetir: toda consulta paginada com `.range()` PRECISA terminar num critério de ordenação único.** Ordenar só por data/nome não é ordenação determinística.
+
+**Ponto em aberto desta auditoria (não fechado):**
+- **"Peônia" não existe na tabela `products`** — a busca por `%peônia%`/`%peonia%` não trouxe nada. Ou está com outro nome, ou o cadastro nunca salvou. Precisa confirmar com o Kennedy.
+- **Cropped Papoula TEM 20 peças no banco** (3 cores × 5 grades, 06/08), com **zero movimentações** — ou seja, o estoque veio do cadastro inicial e nunca foi vendido nem recebeu entrada. Se a tela mostrava zero, era a paginação; confirmar depois do fix.
+- **Cuidado com a query "detector de furo"**: a versão usada tinha `join lateral` no último movimento, o que **exclui produtos sem nenhuma movimentação** — Papoula caiu justamente nesse caso, então o "0 rows" **não** limpou a base inteira. Pra auditoria completa, usar `left join` e tratar o caso sem movimento.
+- **Estoque inicial do cadastro não gera `stock_moves`** — entra direto na coluna. Não é bug, mas é um buraco no rastro: peça "lançada" pelo cadastro não aparece no histórico de movimentações.
