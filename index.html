@@ -1406,7 +1406,7 @@
       <div class="row cols2">
         <div>
           <label>Desconto (R$)</label>
-          <input id="sale_discount" type="number" step="0.01" value="0" />
+          <input id="sale_discount" type="number" min="0" step="0.01" value="0" />
         </div>
         <div class="chk" style="margin-top:22px">
           <input id="overrideTroca" type="checkbox" />
@@ -2027,9 +2027,10 @@
 
     <div class="warnBox small" style="margin-bottom:12px">
       Aqui dá pra corrigir quem vendeu, pra quem, por onde veio e a observação.
-      <b>Itens, valores e pagamentos não mudam por aqui</b> — eles mexem em estoque
-      e financeiro. Se a peça ou o valor estiver errado, exclua a venda e lance de novo.
+      Para ajustar o valor recebido, a forma de pagamento ou o desconto,
+      use <b>Corrigir pagamento / desconto</b>.
     </div>
+    <button class="btn" id="btnReviewSaleFinancials" type="button">Corrigir pagamento / desconto</button>
 
     <div class="row cols2">
       <div>
@@ -2072,6 +2073,7 @@
   <div class="modalBox">
     <h2>Gerenciar pagamentos</h2>
     <div id="paymentSaleInfo" class="small"></div>
+    <button class="btn" id="btnReviewFinancials" type="button" style="margin-top:12px">Corrigir pagamento / desconto</button>
     <div class="sep"></div>
     
     <div class="row cols2">
@@ -2132,6 +2134,33 @@
     
     <div class="sep"></div>
     <button class="btn" id="btnClosePayments">Fechar</button>
+  </div>
+</div>
+
+<div id="modalFinancialCorrection" class="modal hide" role="dialog" aria-modal="true" aria-labelledby="fc_title">
+  <div class="modalBox" style="max-width:760px">
+    <h2 id="fc_title">Corrigir pagamento / desconto</h2>
+    <div id="fc_info" class="small muted"></div>
+    <p class="small" style="margin:12px 0">Confira o que foi realmente recebido. A correção mantém as peças do pedido e registra o motivo no histórico.</p>
+    <form id="financialCorrectionForm">
+      <label for="fc_discount">Desconto total da venda (R$)</label>
+      <input id="fc_discount" type="number" min="0" step="0.01" required />
+      <h3 style="margin:16px 0 8px">Pagamentos registrados</h3>
+      <div id="fc_payments"></div>
+      <div class="sep"></div>
+      <div id="fc_summary" class="small" aria-live="polite"></div>
+      <label for="fc_reason" style="margin-top:12px">Motivo da correção</label>
+      <input id="fc_reason" maxlength="500" required placeholder="Ex.: desconto combinado após finalizar a venda" />
+      <div id="fc_error" role="alert" class="small" style="color:var(--bad);margin-top:10px"></div>
+      <div class="btns" style="margin-top:16px">
+        <button class="btn ok" id="btnSaveFinancialCorrection" type="submit">Salvar correção</button>
+        <button class="btn" id="btnCancelFinancialCorrection" type="button">Cancelar</button>
+      </div>
+    </form>
+    <details style="margin-top:18px">
+      <summary>Histórico de correções</summary>
+      <div id="fc_audit" class="small" style="margin-top:8px"></div>
+    </details>
   </div>
 </div>
 
@@ -2972,6 +3001,7 @@
       profit: row.profit,
       note: row.note,
       paymentStatus: row.payment_status,
+      financeRevision: row.finance_revision ?? null,
       priceTier: row.price_tier,
       items: (row.sale_items||[]).map(it=>({
         productId: it.product_id, name: it.name, cat: it.cat, fabric: it.fabric,
@@ -6540,7 +6570,44 @@
     renderSaleTotals();
   }
 
+  // Uma tentativa sem resposta pode já ter sido gravada. Guarde o mesmo
+  // pedido e a chave até confirmar o resultado, sem permitir editar/limpar
+  // o carrinho no meio do envio.
+  let pendingSaleSubmission = null;
+  let saleSubmissionBusy = false;
+  const saleSubmissionControls = new Map();
+
+  function lockSaleSubmissionControls(locked){
+    const card = document.getElementById("btnFinalize").closest(".card");
+    if(locked){
+      card.querySelectorAll("input, select, button, textarea").forEach(el=>{
+        if(!saleSubmissionControls.has(el)) saleSubmissionControls.set(el, el.disabled);
+        el.disabled = true;
+      });
+    } else {
+      saleSubmissionControls.forEach((disabled, el)=>{ el.disabled = disabled; });
+      saleSubmissionControls.clear();
+    }
+  }
+
+  function resetSaleDraft(){
+    currentSale = { items:[], finalizedSaleId:null };
+    setSaleClient("");
+    document.getElementById("sale_vendedor").value = "";
+    // O select oculto só oferece Pendente. PIX deixava value vazio e a
+    // segunda venda falhava no sales_pay_check até recarregar a página.
+    document.getElementById("sale_pay").value = "Pendente";
+    document.getElementById("sale_channel").value = "Loja";
+    document.getElementById("sale_kind").value = "Venda";
+    document.getElementById("sale_price_tier").value = "Atacado";
+    document.getElementById("sale_discount").value = "0";
+    document.getElementById("sale_note").value = "";
+    document.getElementById("overrideTroca").checked = false;
+  }
+
   document.getElementById("btnFinalize").addEventListener("click", async ()=>{
+    if(saleSubmissionBusy) return;
+    if(!pendingSaleSubmission){
     if(!currentSale.items.length) return toast("Sem itens","Bipe pelo menos 1 produto.");
 
     const cid = document.getElementById("sale_client").value || "";
@@ -6563,93 +6630,92 @@
     }
 
     const totals = saleTotals(currentSale);
-    const pay = document.getElementById("sale_pay").value || "";
-    const inst = document.getElementById("sale_inst").value || "";
+    const subtotal = currentSale.items.reduce((sum,it)=>sum + toNum(it.price) * toNum(it.qty),0);
+    if(!Number.isFinite(totals.disc) || totals.disc < 0 || totals.disc > subtotal){
+      return toast("Desconto inválido","Informe um desconto entre zero e o subtotal da venda.");
+    }
     const channel = document.getElementById("sale_channel").value || "Loja";
     const note = document.getElementById("sale_note").value.trim();
-
-    const btn = document.getElementById("btnFinalize");
-    btn.disabled = true;
-    try {
-    // client_request_id: gerado uma vez, reenviado em qualquer retry — é o
-    // que faz create_sale() ser seguro contra duplo clique/toque (ver CLAUDE.md).
-    const clientRequestId = crypto.randomUUID();
-    const { data: saleRow, error } = await sb.rpc("create_sale", {
-      p_client_request_id: clientRequestId,
+    pendingSaleSubmission = { items: currentSale.items.map(it=>({...it})), client: c, payload: {
+      p_client_request_id: crypto.randomUUID(),
       p_client_id: cid || null,
       p_vendedor_id: vid || null,
       p_channel: channel,
       p_kind: kind,
-      p_pay: pay,
-      p_installments: pay === "CartaoParcelado" ? Number(inst) : 0,
+      p_pay: "Pendente",
+      p_installments: 0,
       p_discount: totals.disc,
       p_note: note,
       p_items: currentSale.items.map(it=>({ product_id: it.productId, qty: it.qty })),
       p_price_tier: currentPriceTier()
-    });
+    } };
+    }
 
-    if(error) return toast("Falhou", error.message);
+    const btn = document.getElementById("btnFinalize");
+    const submission = pendingSaleSubmission;
+    saleSubmissionBusy = true;
+    lockSaleSubmissionControls(true);
+    btn.textContent = "Salvando venda…";
+    try {
+    const { data: saleRow, error } = await sb.rpc("create_sale", submission.payload);
+    if(error){
+      // Erro estruturado SQL/PostgREST é resposta definida. Falta de
+      // conexão/timeout não prova rollback: nesse caso preserve o pedido.
+      const rejected = /^[0-9A-Z]{5}$/.test(error.code || "") || /^PGRST\d+$/.test(error.code || "");
+      if(rejected) pendingSaleSubmission = null;
+      toast(rejected ? "Venda não salva" : "Confirmação pendente", rejected ? error.message : "A conexão falhou. Clique em Confirmar venda pendente para consultar a mesma tentativa, sem duplicar.");
+      return;
+    }
+    if(!saleRow?.id) throw new Error("O servidor não confirmou o número da venda.");
 
     // Espelha no cache local o que o servidor já fez de verdade (estoque
     // baixado, stock_move gravado) — não recalcula nada, só reflete.
-    for(const it of currentSale.items){
+    const alreadyCached = db.sales.some(s=>s.id === saleRow.id);
+    for(const it of alreadyCached ? [] : submission.items){
       const p = db.products.find(x=>x.id===it.productId);
       if(p) p.stock = Math.max(0, toNum(p.stock) - toNum(it.qty));
     }
-    await loadStockMovesFromSupabase();
-    pushStockToNuvemshop(currentSale.items.map(it=>it.barcode));
-
-    const sale = mapSaleFromDb({ ...saleRow, sale_items: currentSale.items.map(it=>({
+    const sale = mapSaleFromDb({ ...saleRow, sale_items: submission.items.map(it=>({
       product_id: it.productId, name: it.name, cat: it.cat, fabric: it.fabric,
       size: it.size, price: it.price, cost: it.cost, qty: it.qty, barcode: it.barcode,
       colorName: it.colorName || ""
     })), sale_payments: [] });
 
-    if(kind === "Troca" && cid && c){
+    if(!alreadyCached) db.sales.unshift(sale);
+    // Limpe antes de qualquer atualização auxiliar. Um erro carregando o
+    // histórico não pode deixar uma venda já salva pronta para reenviar.
+    pendingSaleSubmission = null;
+    resetSaleDraft();
+    renderSale();
+    renderHome();
+    toast("Finalizado","Venda #" + sale.id.slice(-6).toUpperCase() + " salva. Pronto para a próxima venda!");
+
+    const { p_kind: kind, p_client_id: cid } = submission.payload;
+    const c = submission.client;
+    if(!alreadyCached && kind === "Troca" && cid && c){
       const newCount = toNum(c.trocaCount||0) + 1;
       const { error: cErr } = await sb.from("clients").update({ troca_count: newCount }).eq("id", cid);
       if(!cErr) c.trocaCount = newCount;
     }
 
-    db.sales.unshift(sale);
-
-    toast("Finalizado","Venda #" + sale.id.slice(-6).toUpperCase() + " salva com sucesso!");
-
-    // Limpar tudo automaticamente após 1.5 segundos
-    setTimeout(()=>{
-      currentSale = { items:[], finalizedSaleId:null };
-      setSaleClient("");   // limpa o <select> e o texto visível de uma vez
-      document.getElementById("sale_vendedor").value = "";
-      document.getElementById("sale_channel").value = "Loja";
-      document.getElementById("sale_kind").value = "Venda";
-      document.getElementById("sale_pay").value = "PIX";
-      document.getElementById("sale_price_tier").value = "Atacado";
-      document.getElementById("sale_discount").value = "0";
-      document.getElementById("sale_note").value = "";
-      document.getElementById("overrideTroca").checked = false;
-      renderSale();
-      renderSalesTable();
-      toast("Pronto!","Sistema limpo para a próxima venda.");
-    }, 1500);
-
-    renderSale();
-    renderHome();
+    pushStockToNuvemshop(submission.items.map(it=>it.barcode));
+    await loadStockMovesFromSupabase();
+    } catch(err){
+      toast(pendingSaleSubmission ? "Confirmação pendente" : "Venda salva", pendingSaleSubmission
+        ? "Não foi possível confirmar a resposta. Tente Confirmar venda pendente para verificar a mesma tentativa, sem duplicar."
+        : "O lançamento foi salvo, mas não foi possível atualizar todo o histórico. Recarregue a tela para conferir.");
+      console.warn("Finalização da venda:", err);
     } finally {
+      saleSubmissionBusy = false;
+      if(!pendingSaleSubmission) lockSaleSubmissionControls(false);
       btn.disabled = false;
+      btn.textContent = pendingSaleSubmission ? "Confirmar venda pendente" : "Lançar Venda (Pendente)";
     }
   });
 
   document.getElementById("btnClearSale").addEventListener("click", ()=>{
-    currentSale = { items:[], finalizedSaleId:null };
-    setSaleClient("");   // limpa o <select> e o texto visível de uma vez
-    document.getElementById("sale_vendedor").value = "";
-    document.getElementById("sale_pay").value = "PIX";
-    document.getElementById("sale_channel").value = "Loja";
-    document.getElementById("sale_kind").value = "Venda";
-    document.getElementById("sale_price_tier").value = "Atacado";
-    document.getElementById("sale_discount").value = "0";
-    document.getElementById("sale_note").value = "";
-    document.getElementById("overrideTroca").checked = false;
+    if(saleSubmissionBusy || pendingSaleSubmission) return;
+    resetSaleDraft();
     toast("Venda limpa","Pronto para nova venda.");
     renderSale();
   });
@@ -6758,9 +6824,10 @@
   }
 
   function getSalePaymentStatus(sale){
+    if(toNum(sale.totalBruto) === 0) return "Pago";
     if(!sale.payments || !sale.payments.length) return "Aberto";
-    const totalPago = sale.payments.reduce((a,p)=>a+toNum(p.value),0);
-    if(totalPago >= toNum(sale.totalBruto)) return "Pago";
+    const totalPago = sale.payments.reduce((a,p)=>a+Math.round(toNum(p.value)*100),0);
+    if(totalPago >= Math.round(toNum(sale.totalBruto)*100)) return "Pago";
     if(totalPago > 0) return "Parcial";
     return "Aberto";
   }
@@ -7009,10 +7076,23 @@
     renderHome();
   }
 
-  function openPaymentModal(sale){
-    currentPaymentSaleId = sale.id;
-    const modal = document.getElementById("modalPayments");
-    
+  let pendingPaymentSubmission = null;
+  let paymentSubmissionBusy = false;
+  const paymentSubmissionControls = new Map();
+
+  function lockPaymentSubmissionControls(locked){
+    if(locked){
+      document.getElementById("modalPayments").querySelectorAll("input, select, button").forEach(el=>{
+        if(!paymentSubmissionControls.has(el)) paymentSubmissionControls.set(el, el.disabled);
+        el.disabled = true;
+      });
+    } else {
+      paymentSubmissionControls.forEach((disabled, el)=>{ el.disabled = disabled; });
+      paymentSubmissionControls.clear();
+    }
+  }
+
+  function renderPaymentSaleInfo(sale){
     const c = sale.clientId ? findClientById(sale.clientId) : null;
     const info = document.getElementById("paymentSaleInfo");
     info.innerHTML = `
@@ -7022,7 +7102,20 @@
       <b>Status:</b> ${getSalePaymentStatus(sale)}
     `;
 
-    document.getElementById("payment_date").valueAsDate = new Date();
+  }
+
+  function openPaymentModal(sale){
+    const modal = document.getElementById("modalPayments");
+    if(pendingPaymentSubmission){
+      if(sale.id !== pendingPaymentSubmission.payload.sale_id){
+        return toast("Pagamento pendente", "Confirme o pagamento em andamento antes de abrir outra venda.");
+      }
+      modal.classList.remove("hide");
+      return;
+    }
+    currentPaymentSaleId = sale.id;
+    renderPaymentSaleInfo(sale);
+    document.getElementById("payment_date").value = hojeISOLocal();
     document.getElementById("payment_value").value = "";
     document.getElementById("payment_note").value = "";
     document.getElementById("payment_method").value = "PIX";
@@ -7044,6 +7137,9 @@
   document.getElementById("payment_method").addEventListener("change", togglePaymentInstallments);
 
   function closePaymentModal(){
+    if(paymentSubmissionBusy || pendingPaymentSubmission){
+      return toast("Pagamento pendente", "Confirme o resultado do pagamento antes de fechar esta janela.");
+    }
     document.getElementById("modalPayments").classList.add("hide");
     currentPaymentSaleId = null;
   }
@@ -7051,63 +7147,77 @@
   document.getElementById("btnClosePayments").addEventListener("click", closePaymentModal);
 
   document.getElementById("btnAddPayment").addEventListener("click", async ()=>{
+    if(paymentSubmissionBusy) return;
     const sale = db.sales.find(s=>s.id===currentPaymentSaleId);
     if(!sale) return;
-
-    const value = toNum(document.getElementById("payment_value").value);
-    if(value <= 0) return toast("Valor inválido","Informe um valor maior que zero.");
-
+    if(!pendingPaymentSubmission){
+    const value = Number(document.getElementById("payment_value").value);
+    if(!Number.isFinite(value) || value <= 0 || Math.abs(value*100 - Math.round(value*100)) > 0.000001){
+      return toast("Valor inválido","Informe um valor maior que zero, com até duas casas decimais.");
+    }
     const method = document.getElementById("payment_method").value;
     const installments = method === "Credito" ? Number(document.getElementById("payment_installments").value) : 0;
-
-    // Taxa vem de store_settings.card_fees (Financeiro > Taxas do cartão).
-    // Antes estava chumbada aqui E numa segunda tabela na tela de venda,
-    // com percentuais diferentes — o "lucro estimado" da venda não batia
-    // com o que era gravado no pagamento.
+    if(!["PIX","Dinheiro","Debito","Credito"].includes(method) || (method === "Credito" && (!Number.isInteger(installments) || installments < 1 || installments > 6))){
+      return toast("Pagamento inválido", "Confira a forma de pagamento e as parcelas.");
+    }
     const feePct = taxaDoPagamento(method, installments);
-    const feeValue = (value * feePct) / 100;
-
-    const netValue = value - feeValue; // Valor líquido que vai entrar
-
-    const btn = document.getElementById("btnAddPayment");
-    btn.disabled = true;
-    try {
-    const { data: row, error } = await sb.from("sale_payments").insert({
+    const feeValue = Math.round(value * feePct) / 100;
+    const netValue = Math.round((value - feeValue) * 100) / 100;
+    pendingPaymentSubmission = { acknowledged: false, confirmed: false, payload: {
+      id: crypto.randomUUID(),
       sale_id: sale.id,
       paid_on: document.getElementById("payment_date").value || hojeISOLocal(),
       value, method, installments,
       fee_pct: feePct, fee_value: feeValue, net_value: netValue,
       note: document.getElementById("payment_note").value.trim()
-    }).select().single();
-    if(error) return toast("Falhou", error.message);
+    } };
+    }
 
-    if(!sale.payments) sale.payments = [];
-    sale.payments.push({
-      id: row.id, date: row.paid_on, value: row.value, method: row.method,
-      installments: row.installments, feePct: row.fee_pct, feeValue: row.fee_value,
-      netValue: row.net_value, note: row.note
-    });
-
-    // O trigger recalc_sale_totals já atualizou isso no servidor — espelha
-    // localmente com a mesma fórmula pra não precisar buscar de novo.
-    const totalFees = sale.payments.reduce((a,p)=>a+toNum(p.feeValue||0),0);
-    const totalNet = sale.payments.reduce((a,p)=>a+toNum(p.netValue||p.value),0);
-    sale.feeValue = totalFees;
-    sale.netReceived = totalNet;
-    sale.profit = totalNet - toNum(sale.costTotal||0);
-
+    const btn = document.getElementById("btnAddPayment");
+    const submission = pendingPaymentSubmission;
+    paymentSubmissionBusy = true;
+    lockPaymentSubmissionControls(true);
+    btn.textContent = submission.acknowledged ? "Atualizando valores…" : "Registrando pagamento…";
+    try {
+    if(!submission.acknowledged){
+      // A PK explícita identifica esta tentativa. Retry ignora conflito,
+      // nunca sobrescreve pagamento existente nem cria uma segunda linha.
+      const { error } = await sb.from("sale_payments").upsert(submission.payload, { onConflict: "id", ignoreDuplicates: true });
+      if(error){
+        const rejected = /^[0-9A-Z]{5}$/.test(error.code || "") || /^PGRST\d+$/.test(error.code || "");
+        if(rejected) pendingPaymentSubmission = null;
+        toast(rejected ? "Pagamento não salvo" : "Confirmação pendente", rejected ? error.message : "A conexão falhou. Use Confirmar pagamento pendente para verificar a mesma tentativa, sem duplicar.");
+        return;
+      }
+      submission.acknowledged = true;
+    }
+    // Confirme o ID/venda antes de anunciar sucesso, inclusive no caminho
+    // de conflito ignorado. Depois busque os totais e revisão do servidor.
+    const { data: payment, error: paymentError } = await sb.from("sale_payments").select("id, sale_id").eq("id", submission.payload.id).eq("sale_id", submission.payload.sale_id).single();
+    if(paymentError || !payment) throw paymentError || new Error("Pagamento não localizado.");
+    submission.confirmed = true;
     await sincronizarFormaDePagamento(sale);
-
-    toast("Registrado",`Pagamento de ${fmtBRL(value)} adicionado. ${feeValue > 0 ? `Taxa: ${fmtBRL(feeValue)}` : ""}`);
-
+    pendingPaymentSubmission = null;
+    document.getElementById("payment_value").value = "";
+    document.getElementById("payment_note").value = "";
+    renderPaymentSaleInfo(sale);
     renderPaymentHistory(sale);
     renderSalesTable();
     renderHome();
-
-    document.getElementById("payment_value").value = "";
-    document.getElementById("payment_note").value = "";
+    const savedPayment = sale.payments.find(p=>p.id === submission.payload.id);
+    toast("Registrado", savedPayment ? `Pagamento de ${fmtBRL(savedPayment.value)} confirmado.` : "Histórico atualizado. Este pagamento foi alterado em outra sessão.");
+    } catch(err){
+      toast(submission.confirmed ? "Pagamento salvo" : "Confirmação pendente", submission.confirmed
+        ? (pendingPaymentSubmission ? "Falta atualizar os valores na tela. Clique em Atualizar pagamento salvo; o pagamento não será enviado novamente." : "O registro foi confirmado, mas a tela não atualizou. Reabra os pagamentos para conferir.")
+        : "Não foi possível confirmar a resposta. Use Confirmar pagamento pendente para verificar a mesma tentativa, sem duplicar.");
+      console.warn("Registro de pagamento:", err);
     } finally {
+      paymentSubmissionBusy = false;
+      if(!pendingPaymentSubmission) lockPaymentSubmissionControls(false);
       btn.disabled = false;
+      btn.textContent = pendingPaymentSubmission
+        ? (pendingPaymentSubmission.confirmed ? "Atualizar pagamento salvo" : "Confirmar pagamento pendente")
+        : "Registrar pagamento";
     }
   });
 
@@ -7123,14 +7233,13 @@
   }
 
   async function sincronizarFormaDePagamento(sale){
-    const nova = formaDePagamentoDerivada(sale);
-    if(nova === sale.pay) return;
-    const { error } = await sb.from("sales").update({ pay: nova }).eq("id", sale.id);
-    // Enquanto o SQL novo não rodar, o check antigo recusa 'Pendente' e
-    // 'Debito'/'Credito' — não é motivo pra atrapalhar o pagamento, que
-    // já foi gravado. Só não atualiza o rótulo.
-    if(error){ console.warn("forma de pagamento não sincronizada:", error.message); return; }
-    sale.pay = nova;
+    // O trigger deriva forma, taxas, status e finance_revision na mesma
+    // transação do pagamento. O cliente só lê o resultado canônico.
+    const { data, error } = await sb.from("sales").select("*, sale_items(*), sale_payments(*)").eq("id", sale.id).single();
+    if(error || !data) throw error || new Error("Venda não localizada.");
+    Object.assign(sale, mapSaleFromDb(data));
+    const index = db.sales.findIndex(s=>s.id === sale.id);
+    if(index >= 0) db.sales[index] = sale;
   }
 
   function renderPaymentHistory(sale){
@@ -7144,7 +7253,7 @@
       const methodDisplay = p.method || "N/A";
       const installmentsDisplay = p.installments > 1 ? ` ${p.installments}x` : "";
       const feeDisplay = p.feeValue > 0 ? fmtBRL(p.feeValue) : "-";
-      const netDisplay = p.netValue ? fmtBRL(p.netValue) : fmtBRL(p.value);
+      const netDisplay = fmtBRL(p.netValue ?? p.value);
       
       return `
         <tr>
@@ -8094,5 +8203,6 @@
   }
 </script>
 
+<script src="financial-corrections.js"></script>
 </body>
 </html>

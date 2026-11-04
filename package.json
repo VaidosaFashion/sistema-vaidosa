@@ -1,0 +1,11 @@
+{
+  "name": "sistema-vaidosa",
+  "private": true,
+  "scripts": {
+    "test": "node --test tests/*.test.cjs",
+    "preview": "node tests/preview-server.cjs"
+  },
+  "devDependencies": {
+    "jsdom": "26.1.0"
+  }
+}
