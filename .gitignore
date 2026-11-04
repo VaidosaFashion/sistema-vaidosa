@@ -1,0 +1,7 @@
+node_modules/
+.local-test/
+
+# Exportacoes privadas de recuperacao nunca entram no repositorio.
+checkpoints-private/
+*checkpoint*.csv
+*.dump

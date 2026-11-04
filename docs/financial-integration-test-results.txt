@@ -1,0 +1,662 @@
+
+> test
+> node --test tests/*.test.cjs
+
+TAP version 13
+# Subtest: local cart scripts load in dependency order before main app; sale buttons stay locked until init
+ok 1 - local cart scripts load in dependency order before main app; sale buttons stay locked until init
+  ---
+  duration_ms: 475.852666
+  type: 'test'
+  ...
+# Subtest: actual renderSale and quantity/remove controls persist draft changes
+ok 2 - actual renderSale and quantity/remove controls persist draft changes
+  ---
+  duration_ms: 233.327917
+  type: 'test'
+  ...
+# Subtest: actual discount field persists and note stays out of local storage
+ok 3 - actual discount field persists and note stays out of local storage
+  ---
+  duration_ms: 186.542042
+  type: 'test'
+  ...
+# Subtest: real app resets payment to Pendente and launches three consecutive sales without migration RPCs
+ok 4 - real app resets payment to Pendente and launches three consecutive sales without migration RPCs
+  ---
+  duration_ms: 246.108958
+  type: 'test'
+  ...
+# Subtest: clearing with actual app resets payment and does not delete saved sales
+ok 5 - clearing with actual app resets payment and does not delete saved sales
+  ---
+  duration_ms: 116.768125
+  type: 'test'
+  ...
+# Subtest: actual finalize, Nova venda and clear button handlers route through the safe controller
+ok 6 - actual finalize, Nova venda and clear button handlers route through the safe controller
+  ---
+  duration_ms: 111.665375
+  type: 'test'
+  ...
+# Subtest: auth account change locks actual cart controls and leaves its stored draft in the original scope
+ok 7 - auth account change locks actual cart controls and leaves its stored draft in the original scope
+  ---
+  duration_ms: 96.427542
+  type: 'test'
+  ...
+# Subtest: fresh stock check blocks missing, unavailable or insufficient product without losing cart
+ok 8 - fresh stock check blocks missing, unavailable or insufficient product without losing cart
+  ---
+  duration_ms: 294.571667
+  type: 'test'
+  ...
+# Subtest: app blocks discount above updated subtotal but preserves it for correction
+ok 9 - app blocks discount above updated subtotal but preserves it for correction
+  ---
+  duration_ms: 114.530458
+  type: 'test'
+  ...
+# Subtest: app preserves pending snapshot and disables actual controls when post-submit lookup fails
+ok 10 - app preserves pending snapshot and disables actual controls when post-submit lookup fails
+  ---
+  duration_ms: 85.434167
+  type: 'test'
+  ...
+# Subtest: saved pending request found after lost response updates recent sales once and clears cart
+ok 11 - saved pending request found after lost response updates recent sales once and clears cart
+  ---
+  duration_ms: 81.89525
+  type: 'test'
+  ...
+# Subtest: stored draft status renders product names as text, not injected HTML
+ok 12 - stored draft status renders product names as text, not injected HTML
+  ---
+  duration_ms: 89.18925
+  type: 'test'
+  ...
+# Subtest: BFCache page restored after another tab sold and reset the same cart cannot submit stale items again
+ok 13 - BFCache page restored after another tab sold and reset the same cart cannot submit stale items again
+  ---
+  duration_ms: 255.73575
+  type: 'test'
+  ...
+# Subtest: BFCache restore while another tab has confirmed cart keeps the stale form locked until Nova venda
+ok 14 - BFCache restore while another tab has confirmed cart keeps the stale form locked until Nova venda
+  ---
+  duration_ms: 181.451167
+  type: 'test'
+  ...
+# Subtest: late validation from a BFCache controller cannot restore or send its old cart over a newer draft
+ok 15 - late validation from a BFCache controller cannot restore or send its old cart over a newer draft
+  ---
+  duration_ms: 241.171958
+  type: 'test'
+  ...
+# Subtest: confirmed exchange uses exact sale count once and conditional counter update
+ok 16 - confirmed exchange uses exact sale count once and conditional counter update
+  ---
+  duration_ms: 80.086917
+  type: 'test'
+  ...
+# Subtest: exchange count update never lowers a larger legacy client count
+ok 17 - exchange count update never lowers a larger legacy client count
+  ---
+  duration_ms: 75.815542
+  type: 'test'
+  ...
+# Subtest: exchange count read/update failure preserves confirmed sale without retrying stock or payment effects
+ok 18 - exchange count read/update failure preserves confirmed sale without retrying stock or payment effects
+  ---
+  duration_ms: 164.169875
+  type: 'test'
+  ...
+# Subtest: entire HTML scripts and main parse in shipped order; real async init reaches editable cart
+ok 19 - entire HTML scripts and main parse in shipped order; real async init reaches editable cart
+  ---
+  duration_ms: 614.203833
+  type: 'test'
+  ...
+# Subtest: full initialized page persists real client/item controls, excludes note and clears via real reset
+ok 20 - full initialized page persists real client/item controls, excludes note and clears via real reset
+  ---
+  duration_ms: 285.358416
+  type: 'test'
+  ...
+# Subtest: reload with persisted draft runs full initialization and restores client/items with note omitted
+ok 21 - reload with persisted draft runs full initialization and restores client/items with note omitted
+  ---
+  duration_ms: 339.720458
+  type: 'test'
+  ...
+# Subtest: full page financial cancel keeps active 40-piece cart, sold 60 items and stock unchanged
+ok 22 - full page financial cancel keeps active 40-piece cart, sold 60 items and stock unchanged
+  ---
+  duration_ms: 340.781084
+  type: 'test'
+  ...
+# Subtest: full page financial save adjusts existing payment and discount while active cart, 60 items and inventory stay intact
+ok 23 - full page financial save adjusts existing payment and discount while active cart, 60 items and inventory stay intact
+  ---
+  duration_ms: 370.79625
+  type: 'test'
+  ...
+# Subtest: full page financial retry after lost response leaves pending cart frozen and does not duplicate financial effects
+ok 24 - full page financial retry after lost response leaves pending cart frozen and does not duplicate financial effects
+  ---
+  duration_ms: 419.640291
+  type: 'test'
+  ...
+# Subtest: UMD installs browser namespace without CommonJS and exports frozen scope
+ok 25 - UMD installs browser namespace without CommonJS and exports frozen scope
+  ---
+  duration_ms: 12.155791
+  type: 'test'
+  ...
+# Subtest: only allowlisted IDs/quantities/options persist; empty cart overwrites old items
+ok 26 - only allowlisted IDs/quantities/options persist; empty cart overwrites old items
+  ---
+  duration_ms: 1.997
+  type: 'test'
+  ...
+# Subtest: accounts and store hostnames use separate keys and reject copied scope
+ok 27 - accounts and store hostnames use separate keys and reject copied scope
+  ---
+  duration_ms: 0.54975
+  type: 'test'
+  ...
+# Subtest: draft expires at seven days; review restores explicitly and pending never expires
+ok 28 - draft expires at seven days; review restores explicitly and pending never expires
+  ---
+  duration_ms: 0.635625
+  type: 'test'
+  ...
+# Subtest: prepare persists exact request first; UUID and deeply frozen payload survive reload/retry
+ok 29 - prepare persists exact request first; UUID and deeply frozen payload survive reload/retry
+  ---
+  duration_ms: 1.81725
+  type: 'test'
+  ...
+# Subtest: prepare must match saved draft and rejects private note/noncanonical payment
+ok 30 - prepare must match saved draft and rejects private note/noncanonical payment
+  ---
+  duration_ms: 3.099875
+  type: 'test'
+  ...
+# Subtest: storage write failure blocks prepare and retry keeps same UUID without allowing edits
+ok 31 - storage write failure blocks prepare and retry keeps same UUID without allowing edits
+  ---
+  duration_ms: 0.23925
+  type: 'test'
+  ...
+# Subtest: failed readback blocks send; read recovery finds durable pending rather than new UUID
+ok 32 - failed readback blocks send; read recovery finds durable pending rather than new UUID
+  ---
+  duration_ms: 0.139542
+  type: 'test'
+  ...
+# Subtest: nonmatching readback fails closed without silently replacing corrupted data
+ok 33 - nonmatching readback fails closed without silently replacing corrupted data
+  ---
+  duration_ms: 0.338084
+  type: 'test'
+  ...
+# Subtest: confirmation requires matching request, persists minimal tombstone, and can repeat
+ok 34 - confirmation requires matching request, persists minimal tombstone, and can repeat
+  ---
+  duration_ms: 0.582667
+  type: 'test'
+  ...
+# Subtest: failed confirmation persistence preserves pending and never allows a new cart
+ok 35 - failed confirmation persistence preserves pending and never allows a new cart
+  ---
+  duration_ms: 0.557708
+  type: 'test'
+  ...
+# Subtest: confirmation readback error remains blocked until exact confirmed record is read
+ok 36 - confirmation readback error remains blocked until exact confirmed record is read
+  ---
+  duration_ms: 0.574459
+  type: 'test'
+  ...
+# Subtest: corrupt and unknown schemas are preserved and all mutating operations fail closed
+ok 37 - corrupt and unknown schemas are preserved and all mutating operations fail closed
+  ---
+  duration_ms: 0.411875
+  type: 'test'
+  ...
+# Subtest: known fields reject non-JSON values, invalid IDs/quantities/money and too many items
+ok 38 - known fields reject non-JSON values, invalid IDs/quantities/money and too many items
+  ---
+  duration_ms: 0.42575
+  type: 'test'
+  ...
+# Subtest: only a proven first-attempt sales_pay_check rejection restores draft and retires UUID
+ok 39 - only a proven first-attempt sales_pay_check rejection restores draft and retires UUID
+  ---
+  duration_ms: 0.2905
+  type: 'test'
+  ...
+# Subtest: recovered/retried pending cannot use known-rejection escape even with supplied flags
+ok 40 - recovered/retried pending cannot use known-rejection escape even with supplied flags
+  ---
+  duration_ms: 0.127334
+  type: 'test'
+  ...
+# Subtest: failed known-rejection persistence keeps original pending and cannot clear it
+ok 41 - failed known-rejection persistence keeps original pending and cannot clear it
+  ---
+  duration_ms: 0.679
+  type: 'test'
+  ...
+# Subtest: sparse or accessor arrays never become a persisted pending request
+ok 42 - sparse or accessor arrays never become a persisted pending request
+  ---
+  duration_ms: 0.548916
+  type: 'test'
+  ...
+# Subtest: loaded UUIDs canonicalize before comparison; retired uppercase UUID is never reused
+ok 43 - loaded UUIDs canonicalize before comparison; retired uppercase UUID is never reused
+  ---
+  duration_ms: 0.300792
+  type: 'test'
+  ...
+# Subtest: 45-item cart survives reload but requires explicit review and restore
+ok 44 - 45-item cart survives reload but requires explicit review and restore
+  ---
+  duration_ms: 89.84775
+  type: 'test'
+  ...
+# Subtest: cancelling restoration leaves the saved draft untouched and does not submit
+ok 45 - cancelling restoration leaves the saved draft untouched and does not submit
+  ---
+  duration_ms: 5.093459
+  type: 'test'
+  ...
+# Subtest: expired draft requires review; expired pending request remains locked
+ok 46 - expired draft requires review; expired pending request remains locked
+  ---
+  duration_ms: 17.358084
+  type: 'test'
+  ...
+# Subtest: two sales on the same date have distinct request IDs and Pendente payment
+ok 47 - two sales on the same date have distinct request IDs and Pendente payment
+  ---
+  duration_ms: 36.881708
+  type: 'test'
+  ...
+# Subtest: storage write failure or unconfirmed readback prevents all RPCs and preserves visible cart
+ok 48 - storage write failure or unconfirmed readback prevents all RPCs and preserves visible cart
+  ---
+  duration_ms: 13.722333
+  type: 'test'
+  ...
+# Subtest: failure persisting the pending request prevents RPC even after draft saved
+ok 49 - failure persisting the pending request prevents RPC even after draft saved
+  ---
+  duration_ms: 17.795834
+  type: 'test'
+  ...
+# Subtest: pending write accepted but readback failing cannot expose an editable replacement cart
+ok 50 - pending write accepted but readback failing cannot expose an editable replacement cart
+  ---
+  duration_ms: 9.765166
+  type: 'test'
+  ...
+# Subtest: lost RPC response followed by unavailable lookup remains pending; reload reconciles without another write
+ok 51 - lost RPC response followed by unavailable lookup remains pending; reload reconciles without another write
+  ---
+  duration_ms: 48.765291
+  type: 'test'
+  ...
+# Subtest: RPC exception after commit is reconciled immediately when lookup succeeds
+ok 52 - RPC exception after commit is reconciled immediately when lookup succeeds
+  ---
+  duration_ms: 8.123292
+  type: 'test'
+  ...
+# Subtest: storage read failure while handling uncertain send leaves the controller locked without crashing
+ok 53 - storage read failure while handling uncertain send leaves the controller locked without crashing
+  ---
+  duration_ms: 11.49575
+  type: 'test'
+  ...
+# Subtest: pending retry requires a fresh successful lookup and repeats the exact frozen payload
+ok 54 - pending retry requires a fresh successful lookup and repeats the exact frozen payload
+  ---
+  duration_ms: 8.557291
+  type: 'test'
+  ...
+# Subtest: failed pending verification prevents retry, new cart, editing and discard
+ok 55 - failed pending verification prevents retry, new cart, editing and discard
+  ---
+  duration_ms: 16.694917
+  type: 'test'
+  ...
+# Subtest: retry lookup finding committed sale confirms without replaying RPC
+ok 56 - retry lookup finding committed sale confirms without replaying RPC
+  ---
+  duration_ms: 5.164583
+  type: 'test'
+  ...
+# Subtest: general SQL error with absent lookup does not allow a different request
+ok 57 - general SQL error with absent lookup does not allow a different request
+  ---
+  duration_ms: 3.123709
+  type: 'test'
+  ...
+# Subtest: known first payment-constraint rejection is editable only after successful absent lookup
+ok 58 - known first payment-constraint rejection is editable only after successful absent lookup
+  ---
+  duration_ms: 13.025833
+  type: 'test'
+  ...
+# Subtest: recovered pending payment rejection stays locked even when lookup is absent
+ok 59 - recovered pending payment rejection stays locked even when lookup is absent
+  ---
+  duration_ms: 5.075334
+  type: 'test'
+  ...
+# Subtest: wrong request confirmation cannot clear cart or unlock another sale
+ok 60 - wrong request confirmation cannot clear cart or unlock another sale
+  ---
+  duration_ms: 33.517583
+  type: 'test'
+  ...
+# Subtest: failed confirmation persistence keeps pending; screen refresh failure after confirmed does not resend
+ok 61 - failed confirmation persistence keeps pending; screen refresh failure after confirmed does not resend
+  ---
+  duration_ms: 17.62025
+  type: 'test'
+  ...
+# Subtest: confirmed write with transient readback failure shows confirmed and never repeats clearing or RPC
+ok 62 - confirmed write with transient readback failure shows confirmed and never repeats clearing or RPC
+  ---
+  duration_ms: 7.260875
+  type: 'test'
+  ...
+# Subtest: rendering error after durable confirmation cannot change it into a resendable pending request
+ok 63 - rendering error after durable confirmation cannot change it into a resendable pending request
+  ---
+  duration_ms: 8.662666
+  type: 'test'
+  ...
+# Subtest: storage failure in discard and new-sale controls stays locked without rejected handlers
+ok 64 - storage failure in discard and new-sale controls stays locked without rejected handlers
+  ---
+  duration_ms: 5.36475
+  type: 'test'
+  ...
+# Subtest: double-clicks and discard during send cannot change the in-flight request
+ok 65 - double-clicks and discard during send cannot change the in-flight request
+  ---
+  duration_ms: 10.143833
+  type: 'test'
+  ...
+# Subtest: same account and project uses one tab; another account or project has independent draft and lock
+ok 66 - same account and project uses one tab; another account or project has independent draft and lock
+  ---
+  duration_ms: 22.499916
+  type: 'test'
+  ...
+# Subtest: account change during validation or pending lookup blocks RPC
+ok 67 - account change during validation or pending lookup blocks RPC
+  ---
+  duration_ms: 46.006416
+  type: 'test'
+  ...
+# Subtest: missing Web Locks blocks editing and sending instead of relying on advisory local flags
+ok 68 - missing Web Locks blocks editing and sending instead of relying on advisory local flags
+  ---
+  duration_ms: 29.191125
+  type: 'test'
+  ...
+# Subtest: releasing the tab lock during an identity check prevents the prepared RPC
+ok 69 - releasing the tab lock during an identity check prevents the prepared RPC
+  ---
+  duration_ms: 17.028333
+  type: 'test'
+  ...
+# Subtest: cancelling finalization never prepares a request or writes a sale
+ok 70 - cancelling finalization never prepares a request or writes a sale
+  ---
+  duration_ms: 2.822542
+  type: 'test'
+  ...
+# Subtest: missing delete RPC leaves sale and 60 pieces untouched, including repeated attempts
+ok 71 - missing delete RPC leaves sale and 60 pieces untouched, including repeated attempts
+  ---
+  duration_ms: 429.806292
+  type: 'test'
+  ...
+# Subtest: unavailable fiscal lookup cannot enable direct deletion when delete RPC is missing
+ok 72 - unavailable fiscal lookup cannot enable direct deletion when delete RPC is missing
+  ---
+  duration_ms: 204.175375
+  type: 'test'
+  ...
+# Subtest: authorized fiscal note keeps its existing blocking message without stock changes
+ok 73 - authorized fiscal note keeps its existing blocking message without stock changes
+  ---
+  duration_ms: 163.720917
+  type: 'test'
+  ...
+# Subtest: RPC business rejection preserves sale without entering fallback
+ok 74 - RPC business rejection preserves sale without entering fallback
+  ---
+  duration_ms: 149.030375
+  type: 'test'
+  ...
+# Subtest: canceling deletion invokes neither RPC nor table access
+ok 75 - canceling deletion invokes neither RPC nor table access
+  ---
+  duration_ms: 108.285875
+  type: 'test'
+  ...
+# Subtest: successful deletion uses only RPC and updates cached stock once
+ok 76 - successful deletion uses only RPC and updates cached stock once
+  ---
+  duration_ms: 117.104792
+  type: 'test'
+  ...
+# Subtest: opening reads fresh sale and cancel never writes or changes 60 items/stock
+ok 77 - opening reads fresh sale and cancel never writes or changes 60 items/stock
+  ---
+  duration_ms: 458.325
+  type: 'test'
+  ...
+# Subtest: discount and received value are one RPC preserving sale/payment IDs and all pieces
+ok 78 - discount and received value are one RPC preserving sale/payment IDs and all pieces
+  ---
+  duration_ms: 249.837167
+  type: 'test'
+  ...
+# Subtest: discount does not silently reduce received payment and rejects overpayment
+ok 79 - discount does not silently reduce received payment and rejects overpayment
+  ---
+  duration_ms: 225.688708
+  type: 'test'
+  ...
+# Subtest: unchanged form is no-op even without reason
+ok 80 - unchanged form is no-op even without reason
+  ---
+  duration_ms: 118.215042
+  type: 'test'
+  ...
+# Subtest: credit method change enables installments and previews current configured fee
+ok 81 - credit method change enables installments and previews current configured fee
+  ---
+  duration_ms: 127.300458
+  type: 'test'
+  ...
+# Subtest: amount-only change preserves historical fee instead of today rate
+ok 82 - amount-only change preserves historical fee instead of today rate
+  ---
+  duration_ms: 93.586167
+  type: 'test'
+  ...
+# Subtest: double submit while saving sends once and keeps form controls locked
+ok 83 - double submit while saving sends once and keeps form controls locked
+  ---
+  duration_ms: 84.2085
+  type: 'test'
+  ...
+# Subtest: lost response retains form and reuses request ID on retry
+ok 84 - lost response retains form and reuses request ID on retry
+  ---
+  duration_ms: 110.244
+  type: 'test'
+  ...
+# Subtest: stale revision reports server conflict and leaves cache/stock unchanged
+ok 85 - stale revision reports server conflict and leaves cache/stock unchanged
+  ---
+  duration_ms: 99.489125
+  type: 'test'
+  ...
+# Subtest: missing migration blocks opening without writing
+ok 86 - missing migration blocks opening without writing
+  ---
+  duration_ms: 87.335667
+  type: 'test'
+  ...
+# Subtest: missing RPC fails closed without direct table update fallback
+ok 87 - missing RPC fails closed without direct table update fallback
+  ---
+  duration_ms: 103.3465
+  type: 'test'
+  ...
+# Subtest: discount validation and reason are enforced before sending
+ok 88 - discount validation and reason are enforced before sending
+  ---
+  duration_ms: 81.811291
+  type: 'test'
+  ...
+# Subtest: historical payments and reason are escaped in visible audit
+ok 89 - historical payments and reason are escaped in visible audit
+  ---
+  duration_ms: 98.218709
+  type: 'test'
+  ...
+# Subtest: partial balance allowed and zero-total sale with no payments can be settled
+ok 90 - partial balance allowed and zero-total sale with no payments can be settled
+  ---
+  duration_ms: 161.569
+  type: 'test'
+  ...
+# Subtest: date-only correction keeps historical recorded fee even if rate calculation differs
+ok 91 - date-only correction keeps historical recorded fee even if rate calculation differs
+  ---
+  duration_ms: 96.993458
+  type: 'test'
+  ...
+# Subtest: payment status uses cents so 0.10 + 0.70 settles a 0.80 sale
+ok 92 - payment status uses cents so 0.10 + 0.70 settles a 0.80 sale
+  ---
+  duration_ms: 5.677625
+  type: 'test'
+  ...
+# Subtest: full production inline script and correction module compile without execution
+ok 93 - full production inline script and correction module compile without execution
+  ---
+  duration_ms: 109.005875
+  type: 'test'
+  ...
+# Subtest: reviewable preview has no production endpoints and runs actual correction UI offline
+ok 94 - reviewable preview has no production endpoints and runs actual correction UI offline
+  ---
+  duration_ms: 40.042583
+  type: 'test'
+  ...
+# Subtest: standalone preview embeds all scripts/assets and remains network-free
+ok 95 - standalone preview embeds all scripts/assets and remains network-free
+  ---
+  duration_ms: 105.751334
+  type: 'test'
+  ...
+# Subtest: payment modal uses local calendar date and cancel writes nothing
+ok 96 - payment modal uses local calendar date and cancel writes nothing
+  ---
+  duration_ms: 420.826708
+  type: 'test'
+  ...
+# Subtest: saved payment reloads canonical fees/status/revision without stock changes
+ok 97 - saved payment reloads canonical fees/status/revision without stock changes
+  ---
+  duration_ms: 220.796792
+  type: 'test'
+  ...
+# Subtest: lost response and failed lookup keep payment locked; retry finds it and skips another write
+ok 98 - lost response and failed lookup keep payment locked; retry finds it and skips another write
+  ---
+  duration_ms: 150.3985
+  type: 'test'
+  ...
+# Subtest: refresh failure after saved response retries read only
+ok 99 - refresh failure after saved response retries read only
+  ---
+  duration_ms: 194.057834
+  type: 'test'
+  ...
+# Subtest: concurrent clicks send once and input stays locked until response
+ok 100 - concurrent clicks send once and input stays locked until response
+  ---
+  duration_ms: 87.843708
+  type: 'test'
+  ...
+# Subtest: SQL rejection unlocks draft; invalid precision never reaches database
+ok 101 - SQL rejection unlocks draft; invalid precision never reaches database
+  ---
+  duration_ms: 91.396958
+  type: 'test'
+  ...
+# Subtest: payment history displays zero net value without substituting gross
+ok 102 - payment history displays zero net value without substituting gross
+  ---
+  duration_ms: 83.555916
+  type: 'test'
+  ...
+# Subtest: RPC-style thrown response loss is reconciled by payment ID immediately when lookup succeeds
+ok 103 - RPC-style thrown response loss is reconciled by payment ID immediately when lookup succeeds
+  ---
+  duration_ms: 69.23925
+  type: 'test'
+  ...
+# Subtest: unavailable verification blocks all retries and preserves the original UUID and form lock
+ok 104 - unavailable verification blocks all retries and preserves the original UUID and form lock
+  ---
+  duration_ms: 92.503625
+  type: 'test'
+  ...
+# Subtest: verified absence retries exactly the same payload and UUID, even if DOM values were changed
+ok 105 - verified absence retries exactly the same payload and UUID, even if DOM values were changed
+  ---
+  duration_ms: 85.868917
+  type: 'test'
+  ...
+# Subtest: commit with lost response then PGRST301/42501 retry errors never releases a new partial-payment UUID
+ok 106 - commit with lost response then PGRST301/42501 retry errors never releases a new partial-payment UUID
+  ---
+  duration_ms: 149.82125
+  type: 'test'
+  ...
+# Subtest: first explicit business rejection only unlocks after successful verified absence
+ok 107 - first explicit business rejection only unlocks after successful verified absence
+  ---
+  duration_ms: 82.10575
+  type: 'test'
+  ...
+# Subtest: payment found for a mismatched ID or sale cannot unlock the pending form
+ok 108 - payment found for a mismatched ID or sale cannot unlock the pending form
+  ---
+  duration_ms: 161.854416
+  type: 'test'
+  ...
+1..108
+# tests 108
+# suites 0
+# pass 108
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 3583.536166

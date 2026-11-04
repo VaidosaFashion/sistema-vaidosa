@@ -1,0 +1,1 @@
+{"valid": true, "self_tests": 224, "limitation": "Valida integridade e estrutura locais; não é backup completo, não comprova a origem nem a restauração e não autoriza instalação."}

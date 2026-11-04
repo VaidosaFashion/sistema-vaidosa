@@ -1,0 +1,15 @@
+psql:tests/sql/observed_privileges.sql:12: NOTICE:  PASS: risco de TRUNCATE reproduzido só em fixture local e revertido
+{"valid": true, "tables": 11, "rows": 11, "functions": 5, "limitation": "Valida integridade e estrutura locais; não é backup completo, não comprova a origem nem a restauração e não autoriza instalação."}
+NOTICE:  PASS: checkpoint recupera valores/tipos das 11 tabelas em temporarias locais
+NOTICE:  PASS: checkpoint recupera cinco definicoes originais apos migracao e reverte apenas o ensaio local
+psql:tests/sql/financial_edits.sql:110: NOTICE:  PASS: desconto, forma, datas, histórico, idempotência, revisões, limites, 60 itens, legado e estoque
+psql:tests/sql/financial_edits_extra.sql:49: NOTICE:  PASS: parcial, desconto isolado, taxa histórica, novas parcelas, retry INSERT e UPDATE direto negado
+psql:tests/sql/financial_edits_extra.sql:97: NOTICE:  PASS: matriz fiscal observada, constraints de status e rejeição definitiva
+psql:tests/sql/financial_edits_extra.sql:122: NOTICE:  PASS: limites e pagamento de outra venda
+psql:tests/sql/financial_edits_extra.sql:133: NOTICE:  PASS: novo pagamento usa taxa oficial e autor autenticado
+psql:tests/sql/financial_audit_privacy.sql:62: NOTICE:  PASS: CPF e futuras colunas preservados; auditoria restrita a campos financeiros
+psql:tests/sql/harden_sale_stock_rpcs.sql:166: NOTICE:  PASS: RPCs venda/estoque auth, descontos, itens, retry, exclusão repetida e constraints
+psql:tests/sql/table_privileges.sql:46: NOTICE:  PASS: grants mínimos, login preservado, TRUNCATE e DML financeiro direto bloqueados
+PASS: concurrent insert → stale correction, correction → excess insert rejection, simultaneous retry → one audit
+PASS: same-request concurrent last-item sale → one sale; concurrent delete → one stock restoration
+PASS: todas as migrações e consultas de auditoria em PostgreSQL local descartável

@@ -1,0 +1,18 @@
+# Persistência do carrinho publicado (931b28c), preservada nesta integração
+
+- Guarda IDs de produtos e quantidades; IDs de cliente/vendedor; canal; Venda/Troca; Atacado/Varejo; desconto; exceção de segunda troca; versão, horário e estado. Há um registro por conta/projeto nesse perfil de navegador.
+- Omite nomes, CPF, telefone, texto livre, credenciais e cópias de preços/custos/estoque. IDs de cliente/vendedor ainda são referências pessoais; não há criptografia. Isso descreve somente o novo registro do carrinho, não todo o armazenamento legado do site.
+- Salva ao adicionar/remover itens, confirmar alteração de quantidade (evento change) e alterar os campos acompanhados. Digitação de quantidade ainda não confirmada pode não ter sido salva. Busca, barcode ainda não adicionado e observação não entram. Se não há itens nem rascunho anterior, escolhas isoladas de cliente/opções não são persistidas.
+- Antes do envio, grava UUID e payload permitido, relê e compara. Envia Pendente, zero parcelas e observação nula. Observação preenchida bloqueia a finalização: copiar e adicionar depois em Editar; não é descartada silenciosamente.
+- A chave contém host Supabase + UUID da conta, dentro do armazenamento da origem do site. Outra conta, perfil, navegador ou aparelho não recebe cópia. Não sincroniza rascunhos na nuvem.
+- Sair executa signOut e recarrega, mas não apaga o registro. A mesma conta no mesmo perfil/navegador pode retomá-lo se os dados do site continuarem presentes.
+- Abrir a página não restaura o formulário nem envia automaticamente. Exige revisão e confirmação. Reconstitui os produtos do catálogo; preço e estoque são consultados de novo antes da finalização.
+- Após sete dias desde a última gravação, exige revisão adicional; não apaga automaticamente. Restaurar explicitamente rascunho vencido renova horário. Envio pendente nunca é descartado por idade.
+- Resultado incerto bloqueia editar, limpar e começar outro pedido. Consulta client_request_id antes de repetir. Erro na consulta bloqueia reenvio; venda encontrada é confirmada sem recriar; ausência permite apenas repetição explícita do mesmo UUID/payload, sem provar que a tentativa anterior falhou. Exceção restrita: primeira tentativa desta página, resposta 23514/sales_pay_check e consulta concluída sem venda.
+- Confirmação troca o payload por IDs mínimos da venda/tentativa e horário. Nova venda remove esse registro. Limpar pede confirmação e descarta rascunho local; não exclui vendas do banco e não descarta envio pendente.
+- Web Locks dá um editor por conta/projeto entre abas cooperantes da mesma origem. Sem suporte, o caixa bloqueia. Não coordena outros dispositivos, perfis ou versões antigas do site.
+- beforeunload somente solicita aviso ao sair; não grava nem garante impedir fechamento. pagehide libera trava. Voltar por BFCache reinicializa proteção, elimina memória antiga quando não há registro durável e rejeita respostas de validação antigas.
+- Falha de armazenamento avisa que não salvou e impede enviar sem persistência confirmada. Corrupção preserva o registro e bloqueia. Limpeza dos dados do site/localStorage, perda do perfil/disco ou fim de sessão privada pode apagar a proteção. Limpar apenas cache HTTP não é necessariamente o mesmo.
+- Exportação JSON, saveDB e auto-backup legados serializam db; a chave nova do carrinho NÃO entra nesses backups. Não recupera retroativamente o carrinho perdido antes da instalação.
+- O servidor calcula preços no momento da execução. Não reserva estoque, não congela preço no banco nem opera como fila automática offline.
+- Esta proteção é do carrinho de nova venda. Não prometer a mesma persistência para formulários de recebimento, correção financeira ou outros módulos.

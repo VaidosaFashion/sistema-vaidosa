@@ -5,6 +5,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 const { JSDOM, VirtualConsole } = require('jsdom');
+const { fixtureSale, saleId, paymentId, clone } = require('./financial-fixture.cjs');
 
 const root = path.join(__dirname, '..');
 const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
@@ -12,7 +13,7 @@ const uuid = n => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 const USER = uuid(1), CLIENT = uuid(2), SELLER = uuid(3), PRODUCT = uuid(4);
 const nextTurn = () => new Promise(resolve => setImmediate(resolve));
 
-async function fullPage(t, initialStorage = {}) {
+async function fullPage(t, initialStorage = {}, options = {}) {
   const errors = [], reads = [], writes = [], networkAttempts = [], executed = [];
   const virtualConsole = new VirtualConsole();
   virtualConsole.on('jsdomError', error => errors.push(error));
@@ -45,9 +46,14 @@ async function fullPage(t, initialStorage = {}) {
       price_atacado: 50, price_varejo: 80, color_id: uuid(5), colors: { nome: 'Azul fictício' } }],
     clients: [{ id: CLIENT, name: 'Cliente fictício', troca_count: 0 }],
     vendedores: [{ id: SELLER, name: 'Vendedor fictício' }],
-    sales: [], stock_moves: [], categorias: [{ id: uuid(6), nome: 'Vendas', tipo: 'receita' }],
+    sales: options.financial ? [clone(options.sale || fixtureSale())] : [], sale_financial_audit: [],
+    stock_moves: [], categorias: [{ id: uuid(6), nome: 'Vendas', tipo: 'receita' }],
     v_contas: [], movimentacoes: [], store_settings: [{ id: 1, card_fees: null }]
   };
+  if (options.financial) for (const item of fixtures.sales[0].sale_items) fixtures.products.push({
+    id:item.product_id,name:item.name,size:item.size,barcode:item.barcode,stock:10,cost:item.cost,
+    price_atacado:item.price,price_varejo:item.price,color_id:uuid(5),colors:{nome:'Azul fictício'}
+  });
   function query(table) {
     assert.ok(Object.hasOwn(fixtures, table), `Unexpected table: ${table}`);
     const filters = [];
@@ -70,6 +76,7 @@ async function fullPage(t, initialStorage = {}) {
     return q;
   }
   let authCalls = 0;
+  const financialRequests = new Map();
   const sb = {
     auth: {
       async getSession() { authCalls++; return realm({ data: { session: { user: { id: USER } } }, error: null }); },
@@ -78,7 +85,31 @@ async function fullPage(t, initialStorage = {}) {
       signOut() { throw new Error('Unexpected sign out'); }
     },
     from: query,
-    rpc(name) { writes.push({ rpc: name }); throw new Error('Unexpected RPC in full-page startup test'); },
+    async rpc(name, payload) {
+      writes.push({ rpc: name, payload: clone(payload) });
+      assert.ok(options.financial && name === 'edit_sale_financials', 'Only explicit financial fixture RPC is allowed');
+      if (financialRequests.has(payload.p_request_id)) return realm({ data: fixtures.sales[0], error: null });
+      const before = clone(fixtures.sales[0]);
+      assert.equal(payload.p_sale_id, before.id); assert.equal(payload.p_expected_revision, before.finance_revision);
+      const payments = payload.p_payments.map(payment => {
+        const previous = before.sale_payments.find(p => p.id === payment.id);
+        assert.ok(previous, 'financial correction preserves payment IDs');
+        const sameTerms = previous.method === payment.method && previous.installments === payment.installments;
+        const feePct = sameTerms ? previous.fee_pct : w.taxaDoPagamento(payment.method, payment.installments);
+        const feeValue = Math.round(payment.value * feePct) / 100;
+        return { ...previous, ...payment, fee_pct: feePct, fee_value: feeValue, net_value: payment.value - feeValue };
+      });
+      const after = { ...before, discount: payload.p_discount, total_bruto: before.subtotal - payload.p_discount,
+        sale_payments: payments, finance_revision: before.finance_revision + 1 };
+      after.fee_value = payments.reduce((sum, payment) => sum + payment.fee_value, 0);
+      after.net_received = payments.reduce((sum, payment) => sum + payment.net_value, 0);
+      after.profit = after.net_received - before.cost_total;
+      after.pay = [...new Set(payments.map(payment => payment.method))].join() || 'Pendente';
+      fixtures.sales[0] = after; financialRequests.set(payload.p_request_id, true);
+      fixtures.sale_financial_audit.push({created_at:'2026-11-04T13:00:00Z',reason:payload.p_reason,before_data:before,after_data:clone(after)});
+      if (options.lostFinancialResponse && financialRequests.size === 1 && writes.length === 1) throw Error('Conexão interrompida depois da gravação fictícia');
+      return realm({ data: after, error: null });
+    },
     functions: { invoke() { throw new Error('Unexpected external integration'); } }
   };
   w.supabase = { createClient: () => sb };
@@ -108,7 +139,7 @@ async function fullPage(t, initialStorage = {}) {
   assert.ok(controller(), 'automatic authenticated initialization must create the cart controller');
   assert.notEqual(controller().status, 'error', w.document.getElementById('cartDraftStatus').textContent);
   assert.equal(errors.length, 0);
-  return { w, errors, reads, writes, networkAttempts, executed, controller,
+  return { w, errors, reads, writes, networkAttempts, executed, controller, fixtures,
     authCalls: () => authCalls,
     state: () => w.eval('({ currentSale, db, currentProfile })'),
     storage: () => Object.fromEntries(Array.from({ length: w.localStorage.length }, (_, i) => {
@@ -179,4 +210,80 @@ test('reload with persisted draft runs full initialization and restores client/i
   assert.equal(restored.w.document.getElementById('sale_pay').value, 'Pendente');
   assert.deepEqual(restored.writes, []);
   assert.equal(restored.errors.length, 0);
+});
+
+function addLiveCart(h) {
+  h.w.setSaleClient(CLIENT); h.w.handleBarcodeInput('TEST-004');
+  const quantity = h.w.document.querySelector('#saleItems input[data-qty]');
+  quantity.value = '40'; quantity.dispatchEvent(new h.w.Event('change', { bubbles: true }));
+  assert.equal(h.state().currentSale.items[0].qty, 40);
+}
+
+function financialEdit(h) {
+  for (const [id, value] of [['fc_discount', '600'], ['fc_value_' + paymentId, '2400'], ['fc_reason', 'Desconto combinado após finalizar']]) {
+    const input = h.w.document.getElementById(id); input.value = value;
+    input.dispatchEvent(new h.w.Event('input', { bubbles: true }));
+  }
+}
+
+async function submitFinancial(h) {
+  h.w.document.getElementById('financialCorrectionForm').dispatchEvent(new h.w.Event('submit', { bubbles: true, cancelable: true }));
+  await nextTurn();
+}
+
+function invariants(h) {
+  return {
+    cart: JSON.stringify(h.state().currentSale), storage: JSON.stringify(h.storage()),
+    products: JSON.stringify(h.state().db.products),
+    visibleSoldItems: JSON.stringify(h.state().db.sales.find(sale => sale.id === saleId).items),
+    pieces: JSON.stringify(h.fixtures.sales[0].sale_items), stockMoves: JSON.stringify(h.fixtures.stock_moves)
+  };
+}
+
+test('full page financial cancel keeps active 40-piece cart, sold 60 items and stock unchanged', async t => {
+  const h = await fullPage(t, {}, { financial: true }); addLiveCart(h);
+  const before = invariants(h); const revision = h.fixtures.sales[0].finance_revision;
+  await h.w.openFinancialCorrection(saleId); financialEdit(h);
+  h.w.document.getElementById('btnCancelFinancialCorrection').click();
+  assert.equal(h.w.document.getElementById('modalFinancialCorrection').classList.contains('hide'), true);
+  assert.deepEqual(invariants(h), before); assert.equal(h.controller().canEdit(), true);
+  assert.equal(h.fixtures.sales[0].finance_revision, revision); assert.deepEqual(h.writes, []);
+  assert.equal(h.errors.length, 0);
+});
+
+test('full page financial save adjusts existing payment and discount while active cart, 60 items and inventory stay intact', async t => {
+  const h = await fullPage(t, {}, { financial: true }); addLiveCart(h);
+  const before = invariants(h); await h.w.openFinancialCorrection(saleId); financialEdit(h); await submitFinancial(h);
+  assert.equal(h.w.document.getElementById('modalFinancialCorrection').classList.contains('hide'), true);
+  assert.equal(h.writes.length, 1); assert.equal(h.writes[0].rpc, 'edit_sale_financials');
+  const payload = h.writes[0].payload;
+  assert.equal(payload.p_sale_id, saleId); assert.equal(payload.p_discount, 600);
+  assert.equal(payload.p_payments[0].id, paymentId); assert.equal(payload.p_payments[0].value, 2400);
+  assert.deepEqual(invariants(h), before, 'financial edit must not mutate a separate live cart, sale_items or stock');
+  const saved = h.state().db.sales.find(sale => sale.id === saleId);
+  assert.equal(saved.totalBruto, 2400); assert.equal(saved.netReceived, 2400); assert.equal(saved.financeRevision, 5);
+  assert.equal(saved.items.length, 60); assert.equal(saved.payments[0].id, paymentId);
+  assert.equal(h.controller().canEdit(), true); assert.equal(h.w.document.getElementById('btnFinalize').disabled, false);
+  assert.equal(h.fixtures.sale_financial_audit.length, 1);
+  assert.doesNotMatch(JSON.stringify(h.storage()), /Desconto combinado/);
+  await submitFinancial(h); assert.equal(h.writes.length, 1, 'closed financial form cannot repeat the save');
+  assert.equal(h.errors.length, 0);
+});
+
+test('full page financial retry after lost response leaves pending cart frozen and does not duplicate financial effects', async t => {
+  const h = await fullPage(t, {}, { financial: true, lostFinancialResponse: true }); addLiveCart(h);
+  h.w.eval('cartDraftController.store.prepare(cartDraftPayload(cartDraftCapture())); cartDraftController.load();');
+  assert.equal(h.controller().status, 'pending'); const before = invariants(h);
+  await h.w.openFinancialCorrection(saleId); financialEdit(h); await submitFinancial(h);
+  assert.equal(h.fixtures.sales[0].total_bruto, 2400, 'fixture server committed before losing the response');
+  assert.equal(h.w.document.getElementById('modalFinancialCorrection').classList.contains('hide'), false);
+  assert.match(h.w.document.getElementById('fc_error').textContent, /Conexão interrompida/);
+  assert.deepEqual(invariants(h), before); assert.equal(h.controller().canEdit(), false);
+  await submitFinancial(h);
+  assert.equal(h.writes.length, 2); assert.deepEqual(h.writes[0], h.writes[1]);
+  assert.equal(h.fixtures.sales[0].finance_revision, 5); assert.equal(h.fixtures.sale_financial_audit.length, 1);
+  assert.deepEqual(invariants(h), before); assert.equal(h.controller().status, 'pending');
+  for (const id of ['btnFinalize', 'btnClearSale', 'sale_barcode', 'sale_discount']) assert.equal(h.w.document.getElementById(id).disabled, true, id);
+  assert.ok(h.writes.every(write => write.rpc === 'edit_sale_financials'), 'no sale creation, deletion or stock RPC');
+  assert.equal(h.errors.length, 0);
 });
