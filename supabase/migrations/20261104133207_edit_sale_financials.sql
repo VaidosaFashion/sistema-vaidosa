@@ -51,6 +51,26 @@ returns jsonb language sql stable security invoker set search_path = '' as $$
 $$;
 revoke all on function vaidosa_private.sale_financial_snapshot(uuid) from public, anon, authenticated;
 
+-- Auditoria minimizada: a resposta da RPC continua completa, mas o histórico
+-- não copia CPF fiscal, cliente, observação da venda, itens ou futuras colunas.
+-- A nota do pagamento fica porque é um campo financeiro editável neste fluxo.
+create function vaidosa_private.sale_financial_audit_snapshot(p_sale_id uuid)
+returns jsonb language sql stable security invoker set search_path = '' as $$
+  select jsonb_build_object(
+    'id',s.id,'finance_revision',s.finance_revision,
+    'subtotal',s.subtotal,'discount',s.discount,'total_bruto',s.total_bruto,
+    'cost_total',s.cost_total,'fee_pct',s.fee_pct,'fee_value',s.fee_value,
+    'net_received',s.net_received,'profit',s.profit,'payment_status',s.payment_status,
+    'pay',s.pay,'installments',s.installments,
+    'sale_payments',coalesce((select jsonb_agg(jsonb_build_object(
+      'id',p.id,'paid_on',p.paid_on,'value',p.value,'method',p.method,
+      'installments',p.installments,'fee_pct',p.fee_pct,'fee_value',p.fee_value,
+      'net_value',p.net_value,'note',p.note
+    ) order by p.id) from public.sale_payments p where p.sale_id=s.id),'[]'::jsonb)
+  ) from public.sales s where s.id=p_sale_id;
+$$;
+revoke all on function vaidosa_private.sale_financial_audit_snapshot(uuid) from public, anon, authenticated;
+
 -- Uma inserção de pagamento pelo fluxo antigo também precisa esperar a
 -- correção terminar. UPDATE/DELETE diretos não podem transferir o pagamento.
 create function vaidosa_private.lock_payment_sale()
@@ -225,7 +245,7 @@ begin
     raise exception 'O desconto não pode ultrapassar o subtotal da venda' using errcode='22023';
   end if;
   v_total := round(v_sale.subtotal-v_discount,2);
-  v_before := vaidosa_private.sale_financial_snapshot(p_sale_id);
+  v_before := vaidosa_private.sale_financial_audit_snapshot(p_sale_id);
 
   if (select count(*) from public.sale_payments where sale_id=p_sale_id) <> jsonb_array_length(p_payments)
      or (select count(distinct e->>'id') from jsonb_array_elements(p_payments) e) <> jsonb_array_length(p_payments) then
@@ -327,7 +347,7 @@ begin
                     from public.sale_payments where sale_id=p_sale_id),
       payment_status=case when v_paid>=v_total then 'Pago' when v_paid>0 then 'Parcial' else 'Aberto' end
       where id=p_sale_id;
-    v_after := vaidosa_private.sale_financial_snapshot(p_sale_id);
+    v_after := vaidosa_private.sale_financial_audit_snapshot(p_sale_id);
     insert into public.sale_financial_audit(sale_id,request_id,actor_id,actor_name,reason,before_data,after_data)
       values(p_sale_id,p_request_id,v_actor,v_actor_name,btrim(p_reason),v_before,v_after);
   end if;

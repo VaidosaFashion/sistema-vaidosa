@@ -7031,9 +7031,9 @@
       return toast("Não pode excluir", rpcErr.message);
     }
 
-    // Fallback (RPC ainda não aplicada): trava NFC-e + devolve estoque + apaga.
-    // Se a exclusão falhar no meio, desfaz o que já devolveu — senão o
-    // estoque infla e a venda continua lá.
+    // Mantém a mensagem fiscal específica quando a RPC está indisponível.
+    // Sem a operação atômica do servidor, nenhuma exclusão ou devolução
+    // de estoque pode ser feita em etapas pelo navegador.
     const { data: emissaoAutorizada } = await sb
       .from("nfce_emissions")
       .select("numero, chave_acesso")
@@ -7047,33 +7047,7 @@
       );
     }
 
-    const restored = [];
-    for(const it of s.items){
-      const p = db.products.find(x=>x.id===it.productId);
-      if(!p) continue;
-      const result = await applyStockEntry(p, toNum(it.qty), "", "Venda excluída", "DEVOLUCAO");
-      if(result.error){
-        for(const prev of restored){
-          await applyStockEntry(prev.p, -toNum(prev.qty), "", "Rollback exclusão de venda", "SAIDA");
-        }
-        return toast("Falhou ao devolver estoque", result.error);
-      }
-      restored.push({ p, qty: toNum(it.qty) });
-    }
-
-    const { error } = await sb.from("sales").delete().eq("id", saleId);
-    if(error){
-      for(const prev of restored){
-        await applyStockEntry(prev.p, -toNum(prev.qty), "", "Rollback exclusão de venda", "SAIDA");
-      }
-      return toast("Falhou", error.message);
-    }
-
-    db.sales = db.sales.filter(x=>x.id!==saleId);
-    pushStockToNuvemshop(barcodes);
-    toast("Excluída","Venda removida e estoque devolvido.");
-    renderSale();
-    renderHome();
+    return toast("Exclusão indisponível", "Não foi possível excluir com segurança. A venda foi mantida. Tente novamente mais tarde.");
   }
 
   let pendingPaymentSubmission = null;

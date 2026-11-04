@@ -12,11 +12,6 @@ insert into public.colors(id,nome) values
 insert into public.products(id,name,size,cost,price_atacado,price_varejo,stock,color_id)
  values('00000000-0000-4000-8000-000000000103','Produto teste RPC','G1',20,100,120,20,
         '00000000-0000-4000-8000-000000000102');
-create table if not exists public.nfce_emissions(
-  id uuid primary key default gen_random_uuid(),
-  sale_id uuid references public.sales(id), status text
-);
-
 set local role anon;
 do $$
 declare blocked boolean;
@@ -62,6 +57,10 @@ begin
   assert blocked, 'authenticated sem uid não passa pela guarda';
 end $$;
 set local request.jwt.claim.sub = '00000000-0000-4000-8000-000000000100';
+-- O owner prepara/varia fixtures fiscais (a aplicação tem SELECT somente).
+-- As RPCs SECURITY DEFINER mantêm a guarda real de auth.uid() do staff acima;
+-- os testes de grants anon/authenticated permanecem nos blocos próprios.
+reset role;
 do $$
 declare
   product uuid:='00000000-0000-4000-8000-000000000103';
@@ -121,9 +120,9 @@ begin
 
   insert into public.sale_payments(sale_id,value,method,fee_pct,fee_value,net_value)
     values(sale.id,450,'PIX',0,0,450);
-  insert into public.nfce_emissions(id,sale_id,status)
-    values('00000000-0000-4000-8000-000000000104',sale.id,'authorized');
-  foreach fiscal_status in array array['authorized','processing','pending','error','unknown','',null] loop
+  insert into public.nfce_emissions(id,sale_id,numero,serie,ambiente,status,log,created_at,updated_at)
+    values('00000000-0000-4000-8000-000000000104',sale.id,104,1,'homologacao','authorized','[]',now(),now());
+  foreach fiscal_status in array array['authorized','transmitted','pending','error'] loop
     update public.nfce_emissions set status=fiscal_status
       where id='00000000-0000-4000-8000-000000000104';
     blocked:=false;

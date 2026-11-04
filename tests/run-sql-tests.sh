@@ -9,9 +9,16 @@ cleanup() {
   rm -rf "$test_root"
 }
 trap cleanup EXIT HUP INT TERM
-initdb -D "$test_root/pgdata" -A trust --no-locale -E UTF8 >"$test_root/init.log" 2>&1
+if ! initdb -D "$test_root/pgdata" -A trust --no-locale -E UTF8 >"$test_root/init.log" 2>&1; then
+  cat "$test_root/init.log"
+  exit 1
+fi
 # Sem TCP: nenhum serviço fica disponível fora do socket deste diretório.
-pg_ctl -D "$test_root/pgdata" -l "$test_root/server.log" -o "-k $test_root -p $test_port -h ''" start >"$test_root/start.log" 2>&1
+if ! pg_ctl -D "$test_root/pgdata" -l "$test_root/server.log" -o "-k $test_root -p $test_port -h ''" start >"$test_root/start.log" 2>&1; then
+  cat "$test_root/start.log"
+  if [ -f "$test_root/server.log" ]; then cat "$test_root/server.log"; fi
+  exit 1
+fi
 cd "$repo_dir"
 run_sql() {
   if ! psql -X -h "$test_root" -p "$test_port" -d postgres -v ON_ERROR_STOP=1 -f "$1" >"$test_root/last.log" 2>&1; then
@@ -21,10 +28,18 @@ run_sql() {
   sed -n '/NOTICE:  PASS:/p' "$test_root/last.log"
 }
 run_sql tests/sql/bootstrap.sql
-for migration in supabase/migrations/*.sql; do run_sql "$migration"; done
+for migration in supabase/migrations/202608*.sql; do run_sql "$migration"; done
+run_sql tests/sql/observed_schema.sql
+run_sql tests/sql/observed_privileges.sql
+run_sql docs/deploy-preflight.sql
+run_sql supabase/releases/20261104_install_sales.sql
 run_sql tests/sql/financial_edits.sql
 run_sql tests/sql/financial_edits_extra.sql
+run_sql tests/sql/financial_audit_privacy.sql
 run_sql tests/sql/harden_sale_stock_rpcs.sql
+run_sql tests/sql/table_privileges.sql
 VAIDOSA_TEST_SOCKET="$test_root" VAIDOSA_TEST_PORT="$test_port" python3 tests/sql/concurrency.py
 run_sql docs/audit-sales-readonly.sql
+run_sql docs/audit-manual-estrutura.sql
+run_sql docs/deploy-postcheck.sql
 printf '%s\n' 'PASS: todas as migrações e consultas de auditoria em PostgreSQL local descartável'
