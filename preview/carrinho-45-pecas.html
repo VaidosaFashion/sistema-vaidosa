@@ -1,0 +1,2401 @@
+<!DOCTYPE html>
+<html lang="pt-br"><head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Prévia local — Carrinho protegido Vaidosa</title>
+
+  <!-- Icone do app: aparece na aba, no favorito e no atalho da area de trabalho/dock.
+       Sem isso o Chrome inventa um quadrado com a letra do titulo. -->
+  <link rel="icon" type="image/png" sizes="32x32" href="assets/icon-32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="assets/icon-16.png">
+  <link rel="apple-touch-icon" href="assets/icon-180.png">
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#b8276c">
+  <meta name="apple-mobile-web-app-title" content="Vaidosa">
+  <style>
+    :root{
+      --bg:#fafbfc;
+      --card:#ffffff;
+      --txt:#1a1a1a;
+      --muted:#64748b;
+      --line:#e2e8f0;
+      --ok:#10b981;
+      --bad:#ef4444;
+      --warn:#f59e0b;
+      --accent:#b8276c;
+      --accent-light:#d94489;
+      --shadow: 0 1px 3px rgba(0,0,0,.08), 0 1px 2px rgba(0,0,0,.06);
+      --shadow-lg: 0 10px 25px rgba(0,0,0,.08), 0 4px 10px rgba(0,0,0,.05);
+    }
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{
+      margin:0;
+      font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+      background:var(--bg);
+      color:var(--txt);
+      line-height:1.6;
+      -webkit-font-smoothing:antialiased
+    }
+    .sidebar{
+      position:fixed;
+      left:0;top:0;bottom:0;
+      width:260px;
+      background:#ffffff;
+      border-right:1px solid var(--line);
+      box-shadow:var(--shadow);
+      z-index:100;
+      overflow-y:auto;
+      padding:24px 0;
+    }
+    .sidebar-header{
+      padding:0 20px 20px;
+      border-bottom:1px solid var(--line);
+      margin-bottom:20px;
+    }
+    .sidebar-header h1{
+      font-size:18px;
+      margin:0;
+      color:var(--txt);
+      font-weight:600;
+      letter-spacing:-0.02em;
+    }
+    .brand-logo{ display:block; max-width:100%; height:auto; }
+    .sidebar-header .brand-logo{ max-width:150px; margin-bottom:6px; }
+    .login-logo{ max-width:220px; margin:0 auto 14px; }
+    .sidebar-header .sub{
+      color:var(--muted);
+      font-size:11px;
+      margin-top:4px;
+      font-weight:400;
+      line-height:1.4;
+    }
+    nav{display:flex;flex-direction:column;gap:4px;padding:0 12px}
+    nav button{
+      background:transparent;
+      border:none;
+      color:#64748b;
+      padding:12px 16px;
+      border-radius:10px;
+      cursor:pointer;
+      font-size:14px;
+      font-weight:500;
+      transition:all .2s ease;
+      display:flex;
+      align-items:center;
+      gap:12px;
+      text-align:left;
+    }
+    nav button svg{
+      width:20px;
+      height:20px;
+      flex-shrink:0;
+      opacity:.7;
+    }
+    nav button:hover{
+      background:#f8fafc;
+      color:var(--txt);
+    }
+    nav button:hover svg{opacity:1}
+    nav button.active{
+      background:linear-gradient(135deg, var(--accent) 0%, var(--accent-light) 100%);
+      color:#fff;
+      box-shadow:0 2px 8px rgba(184,39,108,.25);
+    }
+    nav button.active svg{opacity:1;color:#fff}
+    .main-container{
+      margin-left:260px;
+      min-height:100vh;
+    }
+
+    /* Menu lateral em tela estreita (celular, ou painel lateral do
+       navegador) -- antes o .sidebar de 260px fixo tomava a tela quase
+       inteira num celular e empurrava o conteudo real pra fora, cortado.
+       Agora vira um menu "hamburguer" que desliza por cima, fechado por
+       padrao. */
+    .mobileMenuBtn{ display:none; }
+    .sidebarOverlay{ display:none; }
+    @media(max-width:900px){
+      .mobileMenuBtn{
+        display:flex; align-items:center; justify-content:center;
+        position:fixed; top:14px; left:14px; z-index:200;
+        width:42px; height:42px; border-radius:10px;
+        background:#fff; border:1px solid var(--line); box-shadow:var(--shadow);
+        cursor:pointer;
+      }
+      .sidebar{
+        transform:translateX(-100%);
+        transition:transform .25s ease;
+      }
+      .sidebar.open{ transform:translateX(0); }
+      .main-container{ margin-left:0; padding-top:64px; }
+      .sidebarOverlay{
+        display:none;
+        position:fixed; inset:0; background:rgba(15,23,42,.4); z-index:99;
+      }
+      .sidebarOverlay.show{ display:block; }
+    }
+
+    .wrap{max-width:1600px;margin:0 auto;padding:24px}
+    main{padding:0}
+    .grid{display:grid;grid-template-columns:1fr;gap:16px}
+    @media(min-width:980px){.grid.cols2{grid-template-columns:1fr 1fr}}
+    .grid > *{min-width:0}
+    .card{
+      background:var(--card);
+      border:1px solid var(--line);
+      border-radius:16px;
+      padding:20px;
+      box-shadow:var(--shadow);
+      transition:all .3s ease
+    }
+    .card:hover{box-shadow:var(--shadow-lg);transform:translateY(-2px)}
+    .card h2{font-size:15px;margin:0 0 16px;font-weight:600;color:var(--txt)}
+    .row{display:grid;grid-template-columns:1fr;gap:12px}
+    /* Grid item default e' min-width:auto, que respeita o conteudo minimo
+       de <select> (a opcao mais longa, tipo nome de cliente/fornecedor) --
+       isso forcava a linha inteira (e a pagina toda) mais larga que a tela
+       num celular, cortando o resto do layout. min-width:0 deixa encolher
+       de verdade. */
+    .row > *{min-width:0}
+    @media(min-width:680px){.row.cols2{grid-template-columns:1fr 1fr}.row.cols3{grid-template-columns:1fr 1fr 1fr}}
+    @media(min-width:900px){.row.cols4{grid-template-columns:1fr 1fr 1fr 1fr}}
+    @media(min-width:900px){.row.cols5{grid-template-columns:repeat(5,1fr)}}
+    label{font-size:13px;color:var(--muted);display:block;margin-bottom:6px;font-weight:500}
+    input,select,textarea{
+      width:100%;
+      padding:11px 14px;
+      border-radius:10px;
+      border:1.5px solid var(--line);
+      background:#fff;
+      color:var(--txt);
+      outline:none;
+      font-size:14px;
+      transition:all .2s ease;
+      font-family:inherit
+    }
+    input:focus,select:focus,textarea:focus{
+      border-color:var(--accent);
+      box-shadow:0 0 0 3px rgba(184,39,108,.08)
+    }
+    textarea{min-height:90px;resize:vertical}
+    .btns{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+    .btn{
+      border:1.5px solid var(--line);
+      background:#fff;
+      color:var(--txt);
+      padding:11px 18px;
+      border-radius:10px;
+      cursor:pointer;
+      font-size:14px;
+      font-weight:500;
+      transition:all .2s ease;
+      font-family:inherit
+    }
+    .btn:hover{transform:translateY(-1px);box-shadow:var(--shadow)}
+    .btn.ok{
+      background:linear-gradient(135deg, var(--ok) 0%, #059669 100%);
+      border-color:var(--ok);
+      color:#fff
+    }
+    .btn.ok:hover{box-shadow:0 4px 12px rgba(16,185,129,.3)}
+    .btn.bad{
+      background:linear-gradient(135deg, var(--bad) 0%, #dc2626 100%);
+      border-color:var(--bad);
+      color:#fff
+    }
+    .btn.bad:hover{box-shadow:0 4px 12px rgba(239,68,68,.3)}
+    .btn.warn{
+      background:linear-gradient(135deg, var(--warn) 0%, #d97706 100%);
+      border-color:var(--warn);
+      color:#fff
+    }
+    .btn.warn:hover{box-shadow:0 4px 12px rgba(245,158,11,.3)}
+    .btn.small{padding:7px 12px;font-size:13px}
+    .btn.action{
+      background:#fff;
+      color:#64748b;
+      border:1px solid #e2e8f0;
+      padding:6px 10px;
+      font-size:12px;
+      font-weight:500;
+      transition:all .2s ease
+    }
+    .btn.action:hover{
+      background:#f8fafc;
+      border-color:#cbd5e1;
+      color:#334155
+    }
+    .btn.action.success:hover{
+      background:#f0fdf4;
+      border-color:#86efac;
+      color:#16a34a
+    }
+    .btn.action.danger:hover{
+      background:#fef2f2;
+      border-color:#fca5a5;
+      color:#dc2626
+    }
+    .btn:disabled{opacity:.5;cursor:not-allowed}
+    .pill{
+      display:inline-block;
+      padding:4px 12px;
+      border:1.5px solid var(--line);
+      border-radius:999px;
+      font-size:12px;
+      color:var(--muted);
+      background:#fff;
+      font-weight:500
+    }
+    .kpi{display:grid;grid-template-columns:1fr;gap:12px}
+    @media(min-width:680px){.kpi{grid-template-columns:repeat(4,1fr)}}
+    .kpi.six{grid-template-columns:1fr}
+    @media(min-width:680px){.kpi.six{grid-template-columns:repeat(3,1fr)}}
+    .kpi .box{
+      background:linear-gradient(135deg, #fff 0%, #fafbfc 100%);
+      border:1.5px solid var(--line);
+      border-radius:14px;
+      padding:16px;
+      transition:all .3s ease;
+      position:relative;
+      overflow:hidden
+    }
+    .kpi .box::before{
+      content:'';
+      position:absolute;
+      top:0;right:0;
+      width:60px;height:60px;
+      background:var(--accent);
+      opacity:.05;
+      border-radius:0 14px 0 100%
+    }
+    .kpi .box:hover{transform:translateY(-2px);box-shadow:var(--shadow-lg)}
+    .kpi .box .t{color:var(--muted);font-size:12px;font-weight:500;text-transform:uppercase;letter-spacing:.05em}
+    .kpi .box .v{font-size:20px;margin-top:8px;font-weight:700;color:var(--txt)}
+    table{width:100%;border-collapse:collapse}
+    thead{background:#fafbfc}
+    tbody tr{transition:background .2s ease}
+    tbody tr:nth-child(even){background:#fafbfc}
+    tbody tr:hover{background:#f1f5f9}
+    th,td{border-bottom:1px solid var(--line);padding:12px 10px;text-align:left;font-size:13px;vertical-align:middle}
+    th{color:var(--muted);font-weight:600;text-transform:uppercase;font-size:11px;letter-spacing:.05em}
+    td input[type="number"]{min-width:85px;padding:8px 10px;font-size:13px;text-align:right}
+    
+    /* Larguras específicas da tabela de produtos */
+    #prodTable td:nth-child(2){white-space:normal !important;word-wrap:break-word !important}
+    #prodTable td:nth-child(2) div{word-wrap:break-word !important;overflow-wrap:break-word !important}
+    
+    .muted{color:var(--muted)}
+    .right{text-align:right}
+    .small{font-size:12px}
+    .hide{display:none !important}
+    .sep{height:1px;background:var(--line);margin:14px 0}
+
+    /* Tela de login (nome + PIN) */
+    .login-gate{
+      position:fixed;inset:0;z-index:1000;
+      background:
+        url('assets/login-bg.jpg') center center / cover no-repeat,
+        linear-gradient(160deg, #fdf2f8 0%, var(--bg) 65%);
+      display:flex;align-items:center;justify-content:center;
+      padding:20px;
+    }
+    .login-card{
+      width:100%;max-width:360px;
+      background:var(--card);
+      border:1px solid var(--line);
+      border-radius:16px;
+      box-shadow:var(--shadow-lg);
+      padding:32px 28px;
+      text-align:center;
+    }
+    .login-card h1{
+      font-size:20px;font-weight:600;color:var(--txt);margin-bottom:6px;letter-spacing:-0.02em;
+    }
+    .login-card .sub{color:var(--muted);font-size:13px;margin-bottom:24px}
+    .login-names{display:flex;flex-direction:column;gap:10px}
+    .login-name-btn{
+      width:100%;padding:14px;border-radius:10px;
+      border:1.5px solid var(--line);background:#fff;
+      font-size:15px;font-weight:600;color:var(--txt);
+      cursor:pointer;transition:.15s ease;
+    }
+    .login-name-btn:hover{border-color:var(--accent);color:var(--accent);background:#fdf2f8}
+    .login-selected{font-size:15px;font-weight:600;color:var(--accent);margin-bottom:16px}
+    #login_pin{
+      width:100%;padding:14px;font-size:22px;text-align:center;letter-spacing:8px;
+      border:1.5px solid var(--line);border-radius:10px;margin-bottom:14px;
+    }
+    #login_pin:focus{border-color:var(--accent);outline:none}
+    .login-error{
+      color:var(--bad);font-size:13px;margin-top:14px;font-weight:600;
+    }
+    .login-user-badge{
+      display:flex;align-items:center;justify-content:space-between;
+      padding:10px 20px;border-top:1px solid var(--line);margin-top:8px;
+      font-size:12.5px;color:var(--muted);
+    }
+    .login-user-badge button{
+      background:none;border:none;color:var(--accent);font-size:12.5px;
+      font-weight:600;cursor:pointer;padding:0;
+    }
+    .toast{
+      position:fixed;right:20px;bottom:20px;
+      background:#fff;
+      border:1.5px solid var(--line);
+      padding:14px 16px;
+      border-radius:14px;
+      max-width:420px;
+      box-shadow:var(--shadow-lg);
+      animation:slideIn .3s ease
+    }
+    @keyframes slideIn{from{transform:translateX(100%);opacity:0}to{transform:translateX(0);opacity:1}}
+    .toast b{display:block;margin-bottom:4px;color:var(--txt);font-weight:600}
+    .warnBox{
+      border:1.5px solid #fbbf24;
+      background:linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+      padding:12px 16px;
+      border-radius:12px;
+      color:#78350f;
+      font-size:13px
+    }
+    .okBox{
+      border:1.5px solid #34d399;
+      background:linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%);
+      padding:12px 16px;
+      border-radius:12px;
+      color:#064e3b;
+      font-size:13px
+    }
+    .badgeAccent{
+      display:inline-block;
+      padding:3px 10px;
+      border-radius:999px;
+      border:none;
+      background:linear-gradient(135deg, var(--accent) 0%, var(--accent-light) 100%);
+      color:#fff;
+      font-size:11px;
+      font-weight:600;
+      text-transform:uppercase;
+      letter-spacing:.05em
+    }
+    .dangerBox{
+      border:1.5px solid #f87171;
+      background:linear-gradient(135deg, #fee2e2 0%, #fecaca 100%);
+      padding:12px 16px;
+      border-radius:12px;
+      color:#7f1d1d;
+      font-size:13px
+    }
+    .infoBox{
+      border:1.5px solid #3b82f6;
+      background:linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
+      padding:12px 16px;
+      border-radius:12px;
+      color:#1e40af;
+      font-size:13px;
+      margin-bottom: 16px;
+    }
+    .inline{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+    .chk{display:flex;gap:10px;align-items:center}
+    .chk input{width:auto;cursor:pointer}
+    .modal{
+      position:fixed;inset:0;
+      background:rgba(0,0,0,.5);
+      backdrop-filter:blur(4px);
+      display:flex;align-items:center;justify-content:center;
+      z-index:999;
+      animation:fadeIn .2s ease
+    }
+    @keyframes fadeIn{from{opacity:0}to{opacity:1}}
+    .modalBox{
+      background:#fff;
+      border-radius:16px;
+      padding:24px;
+      max-width:560px;
+      width:90%;
+      max-height:85vh;
+      overflow:auto;
+      box-shadow:0 20px 50px rgba(0,0,0,.2);
+      animation:scaleIn .3s ease
+    }
+    @keyframes scaleIn{from{transform:scale(.9);opacity:0}to{transform:scale(1);opacity:1}}
+    /* Modais que contem tabela de busca de produto: 560px (o padrao, bom
+       pra confirmacao) espremia 7 colunas e obrigava a rolar a barra
+       horizontal pra achar a grade. Variante larga so pra eles -- os
+       modais de confirmacao continuam estreitos. */
+    .modalBox.wide{max-width:1080px}
+    .modalTabela{max-height:min(52vh,440px);overflow:auto}
+    .modalTabela table{width:100%;table-layout:fixed}
+    .modalTabela th,.modalTabela td{overflow-wrap:anywhere}
+    .modalTabela .colProduto{width:auto;min-width:180px}
+    .modalTabela .colCodigo{width:96px}
+    .modalTabela .colGrade{width:72px}
+    .modalTabela .colNum{width:88px}
+    .modalTabela .colBtn{width:124px}
+    /* cabecalho e botao nao podem quebrar em duas linhas ("GRAD/E",
+       "Adiciona/r") -- so o nome do produto e que quebra. */
+    .modalTabela th{white-space:nowrap}
+    .modalTabela .colBtn,.modalTabela td:last-child .btn{white-space:nowrap}
+    @media(max-width:760px){
+      /* Em tela estreita nao tem como caber tudo: libera a rolagem
+         horizontal de novo, mas com largura minima pra tabela nao
+         esmagar as colunas ate ficarem ilegiveis. */
+      .modalTabela table{table-layout:auto;min-width:620px}
+    }
+    .modalBox h2{font-size:18px;font-weight:600;margin-bottom:16px;color:var(--txt)}
+    .statusPago{color:var(--ok);font-weight:600}
+    .statusParcial{color:var(--warn);font-weight:600}
+    .statusAberto{color:var(--bad);font-weight:600}
+
+    /* ===== Vendas recentes: resumo clicável + detalhe em drawer =====
+       Antes cada venda ocupava duas linhas de tabela (7 colunas de
+       valores + 4 botões coloridos), repetido dezenas de vezes — a
+       consulta pesava mais na tela que o próprio formulário de venda.
+       Agora a linha mostra só o resumo e tudo o mais abre no painel
+       lateral. Nenhuma ação foi removida, só mudou de lugar. */
+    .saleRow{
+      display:flex;align-items:center;gap:12px;
+      padding:11px 12px;border-bottom:1px solid var(--line);
+      cursor:pointer;transition:background .12s ease;
+    }
+    .saleRow:last-child{border-bottom:none}
+    .saleRow:hover{background:#fdf2f8}
+    .saleRow .srCli{flex:1;min-width:0}
+    .saleRow .srNome{
+      font-weight:600;white-space:nowrap;
+      overflow:hidden;text-overflow:ellipsis;
+    }
+    .saleRow .srData{color:var(--muted);font-size:12px;white-space:nowrap;margin-top:2px}
+    .saleRow .srValor{font-weight:700;white-space:nowrap}
+    .saleRow .srSeta{color:var(--muted);font-size:15px;line-height:1}
+    .chip{
+      display:inline-block;padding:2px 9px;border-radius:999px;
+      font-size:11px;font-weight:700;white-space:nowrap;
+      border:1px solid transparent;
+    }
+    .chipPago{background:#e9f7ef;color:#1f7a3c;border-color:#bfe5cd}
+    .chipParcial{background:#fff5e6;color:#a15c00;border-color:#f2d9ae}
+    .chipAberto{background:#fdeaf2;color:#b8276c;border-color:#f3c2d8}
+
+    /* ===== Combobox de cliente (Nova venda) =====
+       Substitui a lista nativa do <select>, que abria com a base inteira
+       de clientes ocupando meia tela. Segue os estilos de formulário já
+       usados no sistema — o dropdown é só borda leve + sombra suave. */
+    .combo{position:relative}
+    .comboList{
+      position:absolute;top:calc(100% + 4px);left:0;right:0;z-index:40;
+      background:#fff;border:1px solid var(--line);border-radius:10px;
+      box-shadow:0 6px 20px rgba(24,16,20,.10);
+      max-height:264px;overflow:auto;padding:4px;
+    }
+    .comboItem{
+      padding:8px 10px;border-radius:7px;cursor:pointer;line-height:1.25;
+    }
+    .comboItem:hover,.comboItem.ativo{background:#fdf2f8}
+    .comboItem .cbNome{font-weight:600;font-size:13px}
+    .comboItem .cbSub{color:var(--muted);font-size:11.5px;margin-top:1px}
+    .comboVazio{padding:10px;color:var(--muted);font-size:12.5px}
+
+    /* Drawer de detalhes. O vidro é discreto de propósito: translúcido
+       claro + blur leve, mantendo contraste de texto — não é pra virar
+       a identidade do sistema. */
+    .drawerOverlay{
+      position:fixed;inset:0;z-index:60;
+      background:rgba(24,16,20,.32);
+      visibility:hidden;opacity:0;
+      transition:opacity .18s ease, visibility .18s ease;
+    }
+    .drawerOverlay.open{visibility:visible;opacity:1}
+    .drawer{
+      position:fixed;top:0;right:0;height:100%;
+      width:420px;max-width:92vw;z-index:61;
+      display:flex;flex-direction:column;
+      background:rgba(255,255,255,.88);
+      -webkit-backdrop-filter:blur(18px) saturate(150%);
+      backdrop-filter:blur(18px) saturate(150%);
+      border-left:1px solid rgba(255,255,255,.75);
+      box-shadow:-18px 0 46px rgba(24,16,20,.16);
+      transform:translateX(100%);
+      transition:transform .22s ease;
+    }
+    .drawer.open{transform:translateX(0)}
+    .drawerHead{
+      display:flex;align-items:flex-start;justify-content:space-between;gap:10px;
+      padding:16px 16px 12px;border-bottom:1px solid rgba(0,0,0,.07);
+    }
+    .drawerHead h3{margin:0;font-size:16px;line-height:1.3}
+    .drawerBody{padding:14px 16px;overflow:auto;flex:1;min-height:0}
+    .drawerFoot{
+      padding:12px 16px;border-top:1px solid rgba(0,0,0,.07);
+      background:rgba(255,255,255,.55);position:relative;
+    }
+    .sdLinha{
+      display:flex;justify-content:space-between;gap:12px;
+      padding:7px 0;border-bottom:1px solid rgba(0,0,0,.05);font-size:13px;
+    }
+    .sdLinha:last-child{border-bottom:none}
+    .sdLinha span:first-child{color:var(--muted)}
+    .sdLinha span:last-child{font-weight:600;text-align:right}
+    .sdSecao{
+      font-size:11px;font-weight:800;letter-spacing:.4px;
+      color:var(--accent);text-transform:uppercase;margin:16px 0 4px;
+    }
+    /* Ações do rodapé em grade, todas visíveis — sem menu escondido. */
+    .sdAcoes{
+      display:grid;grid-template-columns:repeat(4,1fr);
+      gap:6px;margin-top:8px;
+    }
+    .sdAcoes .btn{padding:9px 4px;font-size:12.5px}
+    .sdExcluir{color:var(--bad);border-color:#f3c2c2}
+    .sdExcluir:hover{background:#fdeaea}
+    @media (max-width:520px){
+      .drawer{width:100%;max-width:100%}
+      /* No celular os 4 botões não cabem numa linha só — deixa quebrar
+         em vez de cortar o "⋯" na borda. */
+      .drawerFoot > div{flex-wrap:wrap}
+      .drawerFoot #sd_pgto{flex:1 0 100%}
+    }
+
+    /* ===== Etiquetas (Zebra) — design da etiqueta em si preservado
+       igual ao ETIQUETAS.HTML original, só a "moldura" ao redor (busca,
+       botões) segue os estilos do sistema principal. ===== */
+    :root{
+      --w-etiqueta: 33mm;
+      --h-etiqueta: 50mm;
+    }
+    /* Um card por modelo+cor, com uma caixinha de quantidade por grade —
+       é assim que a etiqueta é pensada na prática ("quero X de cada
+       tamanho dessa cor"), em vez de uma linha por cor×tamanho. */
+    .eti-grupo{
+      border:1px solid var(--line);border-radius:10px;
+      padding:10px 12px;margin-bottom:8px;background:#fff;
+    }
+    .eti-grupo-cab{
+      display:flex;justify-content:space-between;align-items:center;
+      gap:8px;flex-wrap:wrap;margin-bottom:8px;
+    }
+    .eti-grupo-nome{font-weight:700;line-height:1.3}
+    .eti-grades{display:flex;gap:8px;flex-wrap:wrap}
+    .eti-grade{text-align:center}
+    .eti-grade label{
+      display:block;font-size:11px;font-weight:800;
+      color:var(--accent);margin-bottom:2px;
+    }
+    .eti-grade input{width:58px;text-align:center;padding:6px}
+    .eti-grade input.temQtd{border-color:var(--accent);background:#fdf2f8;font-weight:700}
+    .eti-grade .eti-est{font-size:10px;color:var(--muted);margin-top:2px}
+    #folha-impressao{
+      background:#fff;
+      width:99mm;
+      min-height:200mm;
+      padding:0;
+      box-shadow:0 0 20px rgba(0,0,0,.15);
+      display:grid;
+      grid-template-columns:repeat(3,1fr);
+      grid-auto-rows:var(--h-etiqueta);
+      gap:0;
+      align-content:start;
+    }
+    .etiqueta{
+      width:var(--w-etiqueta);height:var(--h-etiqueta);
+      box-sizing:border-box;background:#fff;
+      display:flex;flex-direction:column;align-items:center;text-align:center;
+      /* 2,5mm de folga nas laterais: a impressão de 3 colunas raramente
+         cai perfeitamente alinhada com o picote do rolo, e sem essa
+         margem o conteúdo das etiquetas das pontas sai cortado. */
+      padding:1.5mm 2.5mm;position:relative;
+      border:1px dashed #ddd;
+    }
+    /* Etiqueta redesenhada pra impressora térmica gasta (2026-08-13).
+       O que saía errado na impressão real e foi removido:
+       - tarja preta com texto vazado e o "VAIDOSA FASHION" em texto
+         contornado (color:#fff + text-stroke): área sólida e letra
+         vazada saem como fantasma numa cabeça térmica desgastada;
+       - linha "REF: <sku>" longa, que quebrava em duas e empurrava
+         tudo, sem servir pra nada (a cor, que é a parte útil do SKU,
+         agora aparece sozinha e por extenso);
+       - código de barras estreito e baixo demais pro leitor pegar.
+       O código legível saiu de dentro do gerador de barras (corpo ~7px,
+       impossível de digitar) pra uma linha própria em corpo grande. */
+    .eti-marca{
+      font-family:Arial,sans-serif;font-weight:bold;font-size:7.5px;
+      letter-spacing:.8px;text-transform:uppercase;line-height:1.1;
+      margin-bottom:1.2mm;
+    }
+    .eti-barcode{width:100%;height:12mm;display:block}
+    .eti-cod{
+      font-family:Arial,sans-serif;font-weight:bold;font-size:13px;
+      letter-spacing:1px;line-height:1;margin-top:.4mm;
+    }
+    .eti-nome{
+      font-size:9px;font-weight:bold;text-transform:uppercase;
+      max-width:100%;white-space:nowrap;overflow:hidden;margin-top:1.4mm;
+    }
+    .eti-cor{font-size:8.5px;text-transform:uppercase;line-height:1.2}
+    .eti-tam{font-size:30px;font-weight:900;line-height:1;margin-top:auto;margin-bottom:1mm}
+    .crop-bl{position:absolute;bottom:2px;left:2px;width:4px;height:4px;border-bottom:1px solid #000;border-left:1px solid #000}
+    .crop-br{position:absolute;bottom:2px;right:2px;width:4px;height:4px;border-bottom:1px solid #000;border-right:1px solid #000}
+
+    /* Imprime só a fila de etiquetas, esconde o resto do app inteiro
+       (sidebar, outras abas) — independe de qual aba está com .hide */
+    @media print{
+      @page{ size: 99mm auto; margin: 0; }
+      body *{ visibility:hidden; }
+      #folha-impressao, #folha-impressao *{ visibility:visible; }
+      #folha-impressao{
+        position:absolute; top:0; left:0;
+        box-shadow:none; width:96mm; margin:0; padding:0;
+      }
+      .etiqueta{ border:none; page-break-inside:avoid; }
+    }
+
+    /* Badge status impressora Zebra */
+    #zebraStatusBadge{
+      display:inline-flex;align-items:center;gap:6px;
+      padding:4px 12px;border-radius:20px;font-size:11px;font-weight:600;
+      border:1px solid transparent;margin-bottom:12px;transition:all .3s;
+    }
+    #zebraStatusBadge.neutral{background:#f1f5f9;color:#64748b;border-color:#e2e8f0}
+    #zebraStatusBadge.ok    {background:rgba(16,185,129,.12);color:#059669;border-color:rgba(5,150,105,.25)}
+    #zebraStatusBadge.warn  {background:rgba(245,158,11,.12);color:#b45309;border-color:rgba(180,83,9,.2)}
+    #zebraStatusBadge .dot  {width:7px;height:7px;border-radius:50%;background:currentColor}
+    #zebraStatusBadge.ok .dot{animation:blink 2.2s ease-in-out infinite}
+  </style>
+</head>
+<body><div style="padding: 16px; background: rgb(23, 76, 61); color: white; text-align: center; font-style: normal; font-variant: 600; font-weight: 600; font-size: 16px; line-height: 600; font-family: system-ui; font: 600 16px system-ui;">PRÉVIA LOCAL — 45 peças fictícias — Operação desativada</div>
+
+<div id="loginGate" class="login-gate hide">
+  <div class="login-card">
+    <img alt="Vaidosa Fashion Plus" class="brand-logo login-logo">
+    <div class="sub" id="loginSub">Quem é você?</div>
+
+    <div id="loginStepNames" class="login-names"></div>
+
+    <div id="loginStepPin" class="hide">
+      <div class="login-selected" id="loginSelectedName"></div>
+      <input id="login_pin" type="password" inputmode="numeric" maxlength="4" placeholder="• • • •" autocomplete="off" disabled="">
+      <div id="turnstileWidget" style="display:flex;justify-content:center;margin-bottom:10px"></div>
+      <button class="btn primary" id="btnLoginSubmit" style="width:100%;padding:14px;font-size:15px" disabled="">Entrar</button>
+      <button class="btn" id="btnLoginBack" style="width:100%;margin-top:8px" disabled="">Voltar</button>
+    </div>
+
+    <div id="loginError" class="login-error hide"></div>
+  </div>
+</div>
+
+<button class="mobileMenuBtn" id="btnMobileMenu" aria-label="Abrir menu" disabled="">
+  <svg width="22" height="22" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path></svg>
+</button>
+<div class="sidebarOverlay" id="sidebarOverlay"></div>
+
+<aside class="sidebar" id="appSidebar">
+  <div class="sidebar-header">
+    <img alt="Vaidosa Fashion Plus" class="brand-logo">
+    <span class="badgeAccent">Premium</span>
+    <div class="sub">Sistema completo de gestão para moda plus size</div>
+  </div>
+  <nav>
+    <button data-tab="venda" class="active" disabled="">
+      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z"></path></svg>
+      Caixa
+    </button>
+    <button data-tab="produtos" disabled="">
+      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"></path></svg>
+      Produtos
+    </button>
+    <button data-tab="estoque" disabled="">
+      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"></path></svg>
+      Estoque
+    </button>
+    <button data-tab="etiquetas" disabled="">
+      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m10 0v3a1 1 0 01-1 1H8a1 1 0 01-1-1v-3m10 0H7m0-9V4a1 1 0 011-1h8a1 1 0 011 1v4"></path></svg>
+      Etiquetas
+    </button>
+    <button data-tab="clientes" disabled="">
+      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"></path></svg>
+      Clientes
+    </button>
+    <button data-tab="vendedores" disabled="">
+      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path></svg>
+      Equipe
+    </button>
+    <button data-tab="financeiro" disabled="">
+      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+      Financeiro
+    </button>
+    <button data-tab="relatorios" disabled="">
+      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path></svg>
+      Relatórios
+    </button>
+    <button data-tab="backup" disabled="">
+      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4"></path></svg>
+      Backup &amp; Dados
+    </button>
+  </nav>
+  <div class="login-user-badge">
+    <span id="currentUserBadge">Usuário fictício (ADM)</span>
+    <button id="btnLogout" disabled="">Sair</button>
+  </div>
+</aside>
+
+<div class="main-container" id="appMain">
+<main class="wrap">
+  <section id="tab-home" class="grid hide">
+    <div class="card">
+      <h2>Resumo rápido</h2>
+      <div class="kpi" id="kpi">
+      <div class="box"><div class="t">Produtos</div><div class="v">1</div></div>
+      <div class="box"><div class="t">Clientes</div><div class="v">1</div></div>
+      <div class="box"><div class="t">Peças em estoque (qtd)</div><div class="v">60</div></div>
+      <div class="box"><div class="t">Últimos 30 dias (líquido)</div><div class="v">R$&nbsp;0,00</div></div>
+    </div>
+      <div class="sep"></div>
+      <div class="muted small">
+        Dica: leitor USB de código de barras funciona como teclado. Deixe o cursor no campo Barcode e bipa.
+      </div>
+    </div>
+    <div class="card">
+      <h2>Status</h2>
+      <div id="statusBox" class="okBox small">• Rodando em HTTPS. Bom para iPhone/iPad.<br>• Dados ficam salvos neste navegador. Backup automático protege contra PC dar pau.<br>• Backup automático: desativado (ative na aba Backup).</div>
+    </div>
+  </section>
+
+  <section id="tab-estoque" class="grid cols2 hide">
+    <div class="card">
+      <h2>Entrada de estoque (balanço)</h2>
+      <div class="warnBox small" style="margin-bottom:10px">
+        Lançamento de entrada por barcode. Soma no estoque e registra movimentação.
+      </div>
+
+      <div class="row cols2">
+        <div>
+          <label>Barcode</label>
+          <input id="s_barcode" placeholder="Bipe no leitor ou digite" disabled="">
+        </div>
+        <div>
+          <label>Quantidade</label>
+          <input id="s_qty" type="number" step="1" value="1" disabled="">
+        </div>
+      </div>
+
+      <div class="row cols2">
+        <div>
+          <label>Atualizar custo (opcional)</label>
+          <input id="s_cost" type="number" step="0.01" placeholder="Se quiser trocar custo do produto" disabled="">
+        </div>
+        <div>
+          <label>Observação</label>
+          <input id="s_note" placeholder="Ex: reposição, fornecedor..." disabled="">
+        </div>
+      </div>
+
+      <div class="btns">
+        <button class="btn ok" id="btnStockIn" disabled="">Lançar entrada</button>
+        <button class="btn" id="btnStockManual" disabled="">+ Entrada manual</button>
+        <button class="btn" id="btnClearStock" disabled="">Limpar</button>
+      </div>
+
+      <div class="sep"></div>
+      <div id="stockPreview" class="muted small">Bipe um produto para ver detalhes.</div>
+    </div>
+
+    <div class="card">
+      <h2>Movimentações recentes</h2>
+      <div style="overflow:auto;max-height:540px">
+        <table>
+          <thead>
+            <tr><th>Data</th><th>Tipo</th><th>Barcode</th><th>Produto</th><th class="right">Qtd</th><th class="right">Estoque após</th></tr>
+          </thead>
+          <tbody id="stockMoves"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card" style="grid-column:1/-1">
+      <h2>Estoque atual (visão geral)</h2>
+      <div class="warnBox small" style="margin-bottom:10px">
+        Relatório do que você tem agora, com filtros por modelo, categoria e grade.
+      </div>
+
+      <div class="row" style="margin-bottom:10px">
+        <button class="btn" id="btnEstoquePDF" disabled="">Baixar folha de conferência (PDF)</button>
+        <button class="btn" id="btnEstoqueCSV" disabled="">Baixar planilha (CSV)</button>
+      </div>
+      <div class="small muted" style="margin:-4px 0 10px">
+        Os dois arquivos respeitam os filtros abaixo. O PDF já vem com espaço pra anotar a contagem.
+      </div>
+
+      <div class="row cols4">
+        <div>
+          <label>Buscar modelo</label>
+          <input id="st_q" placeholder="Ex: Tulipa, Jeans, Bermuda..." disabled="">
+        </div>
+        <div>
+          <label>Categoria</label>
+          <select id="st_cat" disabled=""><option value="">Todas</option></select>
+        </div>
+        <div>
+          <label>Cor</label>
+          <select id="st_color" disabled=""><option value="">Todas</option><option value="Azul fictício">Azul fictício</option></select>
+        </div>
+        <div>
+          <label>Grade</label>
+          <select id="st_size" disabled="">
+            <option value="">Todas</option>
+            <option value="G1">G1</option>
+            <option value="G2">G2</option>
+            <option value="G3">G3</option>
+            <option value="G4">G4</option>
+            <option value="G5">G5</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="sep"></div>
+
+      <div class="kpi" id="stockKpi">
+        <div class="box"><div class="t">Peças (qtd)</div><div class="v" id="st_kpi_qty">60</div></div>
+        <div class="box"><div class="t">Valor em custo</div><div class="v" id="st_kpi_cost">R$&nbsp;1.500,00</div></div>
+        <div class="box"><div class="t">Valor em venda (Atacado)</div><div class="v" id="st_kpi_sell">R$&nbsp;3.000,00</div></div>
+        <div class="box"><div class="t">Valor em venda (Varejo)</div><div class="v" id="st_kpi_sell_varejo">R$&nbsp;4.800,00</div></div>
+      </div>
+
+      <div class="sep"></div>
+
+      <div style="overflow:auto">
+        <table>
+          <thead>
+            <tr>
+              <th>Modelo</th>
+              <th>Categoria</th>
+              <th>Tecido</th>
+              <th>Cor</th>
+              <th class="right">G1</th>
+              <th class="right">G2</th>
+              <th class="right">G3</th>
+              <th class="right">G4</th>
+              <th class="right">G5</th>
+              <th class="right">Total</th>
+              <th class="right">Custo unit</th>
+              <th class="right">Atacado unit</th>
+              <th class="right">Varejo unit</th>
+              <th class="right">Custo total</th>
+              <th class="right">Atacado total</th>
+              <th class="right">Varejo total</th>
+            </tr>
+          </thead>
+          <tbody id="stockReportBody">
+        <tr>
+          <td>Produto fictício</td>
+          <td class="small"></td>
+          <td class="small"></td>
+          <td class="small">Azul fictício</td>
+          <td class="right">0</td>
+          <td class="right">60</td>
+          <td class="right">0</td>
+          <td class="right">0</td>
+          <td class="right">0</td>
+          <td class="right"><b>60</b></td>
+          <td class="right">R$&nbsp;25,00</td>
+          <td class="right">R$&nbsp;50,00</td>
+          <td class="right">R$&nbsp;80,00</td>
+          <td class="right">R$&nbsp;1.500,00</td>
+          <td class="right">R$&nbsp;3.000,00</td>
+          <td class="right">R$&nbsp;4.800,00</td>
+        </tr>
+      </tbody>
+        </table>
+      </div>
+      <div class="muted small" style="margin-top:10px" id="stockReportHint">Mostrando 1 modelo(s).</div>
+    </div>
+
+  </section>
+
+  <section id="tab-etiquetas" class="grid cols2 hide">
+    <div class="card">
+      <h2>Gerador de etiquetas (Zebra)</h2>
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:4px">
+        <div id="zebraStatusBadge" class="warn">
+          <span class="dot"></span>
+          <span id="zebraStatusTxt">Imprimindo pelo navegador (3 colunas)</span>
+        </div>
+        <button class="btn" id="btnZebraReconectar" style="font-size:11px;padding:3px 10px" disabled="">Reconectar</button>
+      </div>
+      <div class="warnBox small" style="margin-bottom:10px">
+        Busque pelo modelo (ex: <b>blusa magnólia</b>) e digite quantas etiquetas quer de cada tamanho, em quantas cores precisar de uma vez só. Imprime num rolo de 33×50mm (3 colunas).
+      </div>
+      <div class="infoBox small" style="margin-bottom:10px">
+        <b>Na janela de impressão do Chrome, confira sempre:</b><br>
+        • <b>Margens: Nenhuma</b> &nbsp;•&nbsp; <b>Escala: 100%</b> (não "Ajustar à área de impressão")<br>
+        • Desmarque "Cabeçalhos e rodapés"<br>
+        Com as margens padrão o Chrome encolhe a folha inteira, e aí as etiquetas das pontas saem cortadas e desalinhadas do picote.
+      </div>
+
+      <div class="row">
+        <div>
+          <label>Buscar modelo, cor ou código de barras</label>
+          <input id="eti_search" placeholder="Ex: blusa magnólia, azul marinho, VF000123..." autocomplete="off" disabled="">
+        </div>
+      </div>
+      <div id="eti_resultInfo" class="muted small" style="margin-top:8px"></div>
+      <div id="eti_resultList" style="max-height:420px;overflow-y:auto;margin-top:8px"></div>
+
+      <div class="btns" style="margin-top:10px">
+        <button class="btn ok" id="btnEtiAdd" disabled="">+ Adicionar na fila</button>
+        <button class="btn" id="btnEtiUsarEstoque" title="Preenche cada tamanho com a quantidade que existe hoje no estoque" disabled="">Preencher com o estoque</button>
+      </div>
+
+      <div class="sep"></div>
+
+      <div class="btns">
+        <button class="btn ok" id="btnEtiPrint" style="padding:14px;font-size:15px" disabled="">🖨️ Imprimir</button>
+        <button class="btn bad" id="btnEtiClear" disabled="">Limpar fila</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Fila de impressão</h2>
+      <div class="muted small" style="margin-bottom:10px">Pré-visualização do rolo — 3 colunas de 32×50mm cada.</div>
+      <div id="eti_previewWrap" style="overflow:auto;max-height:640px;display:flex;justify-content:center;background:#f3f4f6;border-radius:10px;padding:16px">
+        <div id="folha-impressao"></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="tab-produtos" class="hide">
+    <div>
+      <div class="card">
+      <h2>Cadastrar produto</h2>
+
+      <div class="infoBox">
+        <b>Códigos VF automáticos:</b> O sistema gera VF000001, VF000002... para cada grade.
+      </div>
+      <div class="row cols2">
+        <div>
+          <label>SKU interno (sugerido automaticamente, pode editar)</label>
+          <input id="p_sku" placeholder="Ex: VF-CALC-001" disabled="">
+        </div>
+        <div></div>
+      </div>
+
+      <div class="row cols3">
+        <div>
+          <label>Nome do produto</label>
+          <input id="p_name" placeholder="Ex: Calça Jeans" disabled="">
+        </div>
+        <div>
+          <label>Categoria</label>
+          <select id="p_cat" disabled="">
+            <option value="">Selecione...</option>
+            <option value="Calça">Calça</option>
+            <option value="Blusa">Blusa</option>
+            <option value="Short">Short</option>
+            <option value="Camisa">Camisa</option>
+            <option value="Vestido">Vestido</option>
+            <option value="Conjunto">Conjunto</option>
+            <option value="Saia">Saia</option>
+            <option value="Macaquinho">Macaquinho</option>
+            <option value="outro">Outro (digitar)</option>
+          </select>
+          <input id="p_cat_outro" placeholder="Digite categoria..." style="display:none;margin-top:8px" disabled="">
+        </div>
+        <div>
+          <label>Cor</label>
+          <select id="p_cor" disabled=""><option value="">Selecione...</option><option value="00000000-0000-4000-8000-000000000005">Azul fictício</option><option value="__NOVA__">+ Cadastrar nova cor</option></select>
+          <input id="p_cor_nova" placeholder="Digite o nome da cor..." style="display:none;margin-top:8px" disabled="">
+        </div>
+      </div>
+
+      <div class="row" id="colorManageRow" style="margin-top:8px">
+        <div>
+          <div class="muted small" style="margin-bottom:6px">Cores cadastradas (clique no × pra remover uma cor que não está mais em uso):</div>
+          <div id="colorChipsList" class="muted small">
+      <span data-color-chip="00000000-0000-4000-8000-000000000005" style="display:inline-flex;align-items:center;gap:4px;padding:3px 8px;margin:2px;border:1px solid var(--line);border-radius:999px">
+        Azul fictício
+        <button data-del-color="00000000-0000-4000-8000-000000000005" title="Remover cor" style="border:none;background:none;cursor:pointer;color:inherit;font-weight:700" disabled="">×</button>
+      </span>
+    </div>
+        </div>
+      </div>
+
+      <div class="row cols3">
+        <div>
+          <label>Preço de custo (R$)</label>
+          <input id="p_cost" type="number" step="0.01" placeholder="0,00" disabled="">
+        </div>
+        <div>
+          <label>Preço Atacado (R$)</label>
+          <input id="p_price_atacado" type="number" step="0.01" placeholder="0,00" disabled="">
+        </div>
+        <div>
+          <label>Preço Varejo (R$)</label>
+          <input id="p_price_varejo" type="number" step="0.01" placeholder="0,00" disabled="">
+        </div>
+      </div>
+
+      <div class="row cols2">
+        <div>
+          <label>Tecido (opcional)</label>
+          <select id="p_fabric" disabled="">
+            <option value="">Selecione...</option>
+            <option value="Viscose">Viscose</option>
+            <option value="Viscosinho">Viscosinho</option>
+            <option value="Linho">Linho</option>
+            <option value="Crepe">Crepe</option>
+            <option value="Duna">Duna</option>
+            <option value="Alfaiataria">Alfaiataria</option>
+            <option value="Moletinho">Moletinho</option>
+            <option value="Jeans">Jeans</option>
+            <option value="outro">Outro (digitar)</option>
+          </select>
+          <input id="p_fabric_outro" placeholder="Digite tecido..." style="display:none;margin-top:8px" disabled="">
+        </div>
+        <div>
+          <label>Observação (opcional)</label>
+          <input id="p_note" placeholder="Ex: estampa, detalhe..." disabled="">
+        </div>
+      </div>
+
+      <div class="sep"></div>
+      <h2>Dados fiscais (NF-e)</h2>
+      <div class="warnBox small" style="margin-bottom:12px">
+        Preenche a classificação fiscal de uma vez, na hora do cadastro. NCM varia por tipo de peça — confira com o contador se tiver dúvida. Os outros já vêm com um valor comum pra loja de roupa MEI/Simples, mas confirme antes de emitir nota de verdade.
+      </div>
+
+      <div class="row cols2">
+        <div>
+          <label>NCM</label>
+          <input id="p_ncm" placeholder="Ex: 61044200" disabled="">
+          <div class="muted small" style="margin-top:4px">8 dígitos, sem ponto. Pode colar 6104.42.00 — a gente tira o ponto.</div>
+        </div>
+        <div>
+          <label>CFOP (padrão de venda)</label>
+          <input id="p_cfop" placeholder="Ex: 5102" value="5102" disabled="">
+        </div>
+      </div>
+
+      <div class="row cols3">
+        <div>
+          <label>Unidade</label>
+          <input id="p_unidade" value="UN" disabled="">
+        </div>
+        <div>
+          <label>Origem</label>
+          <select id="p_origem" disabled="">
+            <option value="0" selected="">0 - Nacional</option>
+            <option value="1">1 - Estrangeira (importação direta)</option>
+            <option value="2">2 - Estrangeira (mercado interno)</option>
+            <option value="3">3 - Nacional (+40% importado)</option>
+            <option value="4">4 - Nacional (processos produtivos básicos)</option>
+            <option value="5">5 - Nacional (-40% importado)</option>
+            <option value="6">6 - Estrangeira (importação direta, sem similar)</option>
+            <option value="7">7 - Estrangeira (mercado interno, sem similar)</option>
+            <option value="8">8 - Nacional (+70% importado)</option>
+          </select>
+        </div>
+        <div>
+          <label>CSOSN</label>
+          <input id="p_csosn" placeholder="Ex: 102" value="102" disabled="">
+        </div>
+      </div>
+
+      <div class="row">
+        <div>
+          <label>CEST (só se a categoria tiver Substituição Tributária)</label>
+          <input id="p_cest" placeholder="Deixe em branco se não se aplica" disabled="">
+        </div>
+      </div>
+
+      <div class="sep"></div>
+      <h2>Estoque por grade</h2>
+      <div class="warnBox small" style="margin-bottom:12px" id="p_stock_create_hint">
+        Informe a quantidade de cada tamanho. Pode deixar 0 se quiser apenas cadastrar o produto agora (sem estoque).
+      </div>
+      <div id="p_stock_edit_hint" class="warnBox small hide" style="margin-bottom:12px">
+        Em edição o estoque não se altera por aqui — use a aba Estoque. Assim uma venda no caixa no mesmo momento não é sobrescrita.
+      </div>
+
+      <div class="row cols3">
+        <div>
+          <label>G1 (qtd)</label>
+          <input id="p_stock_g1" type="number" step="1" min="0" value="0" disabled="">
+        </div>
+        <div>
+          <label>G2 (qtd)</label>
+          <input id="p_stock_g2" type="number" step="1" min="0" value="0" disabled="">
+        </div>
+        <div>
+          <label>G3 (qtd)</label>
+          <input id="p_stock_g3" type="number" step="1" min="0" value="0" disabled="">
+        </div>
+      </div>
+
+      <div class="row cols2">
+        <div>
+          <label>G4 (qtd)</label>
+          <input id="p_stock_g4" type="number" step="1" min="0" value="0" disabled="">
+        </div>
+        <div>
+          <label>G5 (qtd)</label>
+          <input id="p_stock_g5" type="number" step="1" min="0" value="0" disabled="">
+        </div>
+      </div>
+
+      <div class="btns">
+        <button class="btn ok" id="btnAddProduct" disabled="">Gerar códigos e salvar</button>
+        <button class="btn" id="btnClearProduct" disabled="">Limpar</button>
+      </div>
+
+      <div class="sep"></div>
+      <div class="muted small">
+        <b>Como funciona:</b> Preencha os dados do produto e informe a quantidade de cada grade. O sistema criará automaticamente um produto para cada tamanho com estoque maior que zero, cada um com seu próprio código de barras.
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:20px">
+      <h2>Buscar e editar</h2>
+      <div class="row cols3">
+        <div>
+          <label>Buscar (nome, barcode, SKU)</label>
+          <input id="p_search" placeholder="Digite para filtrar..." disabled="">
+        </div>
+        <div>
+          <label>Filtrar por cor</label>
+          <!-- populado em renderProducts(), com as cores que existem no
+               catálogo — mesmo padrão do filtro do relatório de estoque -->
+          <select id="p_filter_color" disabled=""><option value="">Todas</option><option value="Azul fictício">Azul fictício</option></select>
+        </div>
+        <div>
+          <label>Filtrar por grade</label>
+          <select id="p_filter_size" disabled="">
+            <option value="">Todas</option>
+            <option value="G1">G1</option><option value="G2">G2</option><option value="G3">G3</option><option value="G4">G4</option><option value="G5">G5</option>
+          </select>
+        </div>
+      </div>
+      <div class="sep"></div>
+      <div style="overflow-x:auto;max-height:540px">
+        <table style="width:100%;min-width:1320px">
+          <thead>
+            <tr>
+              <th style="width:3%"></th>
+              <th style="width:8%">Barcode</th>
+              <th style="width:22%">Produto</th>
+              <th style="width:11%">Categoria</th>
+              <th style="width:10%">Tecido</th>
+              <th style="width:10%">Cor</th>
+              <th style="width:5%">Grade</th>
+              <th class="right" style="width:6%">Estoque</th>
+              <th class="right" style="width:7%">Atacado</th>
+              <th class="right" style="width:7%">Varejo</th>
+              <th class="right" style="width:7%">Custo</th>
+              <th style="width:6%"></th>
+            </tr>
+          </thead>
+          <tbody id="prodTable">
+        <tr data-row-pid="00000000-0000-4000-8000-000000000004" style="cursor:pointer">
+          <td style="width:3%;text-align:center">
+            <input type="checkbox" data-check="00000000-0000-4000-8000-000000000004" disabled="">
+          </td>
+          <td class="small" style="width:8%">TEST-004</td>
+          <td style="width:22%">
+            <div style="font-weight:500">Produto fictício</div>
+            <div class="muted small" style="margin-top:4px"></div>
+          </td>
+          <td style="width:11%"><select data-edit="cat" data-pid="00000000-0000-4000-8000-000000000004" style="width:100%;padding:6px;font-size:13px" disabled="">
+        <option value="">(vazio)</option><option value="Calça">Calça</option><option value="Blusa">Blusa</option><option value="Short">Short</option><option value="Camisa">Camisa</option><option value="Vestido">Vestido</option><option value="Conjunto">Conjunto</option><option value="Saia">Saia</option><option value="Macaquinho">Macaquinho</option>
+        <option value="__OUTRO__">Outro: </option>
+      </select></td>
+          <td style="width:10%"><select data-edit="fabric" data-pid="00000000-0000-4000-8000-000000000004" style="width:100%;padding:6px;font-size:13px" disabled="">
+        <option value="">(vazio)</option><option value="Viscose">Viscose</option><option value="Viscosinho">Viscosinho</option><option value="Linho">Linho</option><option value="Crepe">Crepe</option><option value="Duna">Duna</option><option value="Alfaiataria">Alfaiataria</option><option value="Moletinho">Moletinho</option><option value="Jeans">Jeans</option>
+        <option value="__OUTRO__">Outro: </option>
+      </select></td>
+          <td style="width:10%"><select data-edit="cor" data-pid="00000000-0000-4000-8000-000000000004" style="width:100%;padding:6px;font-size:13px" disabled="">
+        <option value="00000000-0000-4000-8000-000000000005" selected="">Azul fictício</option>
+        <option value="__NOVA__">+ Nova cor...</option>
+      </select></td>
+          <td style="width:5%;text-align:center">G2</td>
+          <td class="right" style="width:6%">60</td>
+          <td class="right" style="width:7%">R$&nbsp;50,00</td>
+          <td class="right" style="width:7%">R$&nbsp;80,00</td>
+          <td class="right" style="width:7%">R$&nbsp;25,00</td>
+          <td class="right" style="width:6%">
+            <button class="btn small" data-clone="00000000-0000-4000-8000-000000000004" title="Cria um produto novo com os mesmos dados, pra só trocar cor e quantidade" disabled="">Clonar</button>
+          </td>
+        </tr>
+      </tbody>
+        </table>
+      </div>
+      <div class="sep"></div>
+      <div class="btns">
+        <button class="btn warn" id="btnEditProduct" disabled="">Editar selecionado</button>
+        <button class="btn bad" id="btnDeleteProduct" disabled="">Excluir selecionado(s)</button>
+        <span class="pill" id="selectedProductPill">Nenhum selecionado</span>
+        <button class="btn" id="btnProdutosCSV" disabled="">Baixar catálogo (CSV)</button>
+      </div>
+    </div>
+    </div>
+  </section>
+
+  <section id="tab-clientes" class="grid cols2 hide">
+    <div class="card">
+      <h2>Cadastrar cliente</h2>
+
+      <div class="row cols2">
+        <div>
+          <label>Nome / Razão social</label>
+          <input id="c_name" placeholder="Nome do cliente" disabled="">
+        </div>
+        <div>
+          <label>Telefone (WhatsApp)</label>
+          <input id="c_phone" placeholder="DDD + número" disabled="">
+        </div>
+      </div>
+
+      <div class="row cols2">
+        <div>
+          <label>CNPJ (opcional)</label>
+          <input id="c_cnpj" placeholder="00.000.000/0000-00" disabled="">
+        </div>
+        <div>
+          <label>CPF (opcional)</label>
+          <input id="c_cpf" placeholder="Somente se usar" disabled="">
+        </div>
+      </div>
+
+      <div class="row cols2">
+        <div>
+          <label>Cidade/UF (opcional)</label>
+          <input id="c_city" placeholder="Ex: Goiânia/GO" disabled="">
+        </div>
+        <div>
+          <label>Observação (opcional)</label>
+          <input id="c_note" placeholder="Ex: preferências, grade mais usada..." disabled="">
+        </div>
+      </div>
+
+      <div class="row cols2">
+        <div>
+          <label>Trocas usadas (controle)</label>
+          <input id="c_trocas" type="number" step="1" min="0" value="0" disabled="">
+        </div>
+        <div class="btns" style="align-items:end">
+          <button class="btn ok" id="btnAddClient" disabled="">Salvar cliente</button>
+          <button class="btn" id="btnClearClient" disabled="">Limpar</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Clientes e histórico</h2>
+      <div class="row cols2">
+        <div>
+          <label>Buscar cliente</label>
+          <input id="c_search" placeholder="Nome ou telefone..." disabled="">
+        </div>
+        <div>
+          <label>Selecionado</label>
+          <div style="display:flex;gap:8px;align-items:center">
+            <div class="pill" id="selectedClientPill">Nenhum</div>
+            <button class="btn small ok" id="btnEditClient" disabled="">Editar</button>
+          </div>
+        </div>
+      </div>
+      <div class="sep"></div>
+      <div style="overflow:auto;max-height:260px">
+        <table>
+          <thead>
+            <tr><th>Cliente</th><th>Telefone</th><th class="right">Trocas</th><th class="right">Compras</th><th class="right">Bruto</th><th class="right">Líquido</th></tr>
+          </thead>
+          <tbody id="clientTable">
+        <tr data-cid="00000000-0000-4000-8000-000000000002">
+          <td><div>Cliente fictício</div><div class="muted small"></div></td>
+          <td></td>
+          <td class="right">0</td>
+          <td class="right">0</td>
+          <td class="right">R$&nbsp;0,00</td>
+          <td class="right">R$&nbsp;0,00</td>
+        </tr>
+      </tbody>
+        </table>
+      </div>
+      <div class="sep"></div>
+      <div>
+        <h2>Histórico do cliente</h2>
+        <div id="clientHistory" class="muted small">Selecione um cliente para ver as compras.</div>
+      </div>
+    </div>
+  </section>
+
+  <section id="tab-vendedores" class="grid cols2 hide">
+    <div class="card">
+      <h2>Cadastrar vendedor</h2>
+
+      <div class="row cols2">
+        <div>
+          <label>Nome do vendedor</label>
+          <input id="v_name" placeholder="Ex: Maria Silva" disabled="">
+        </div>
+        <div>
+          <label>Telefone (opcional)</label>
+          <input id="v_phone" placeholder="DDD + número" disabled="">
+        </div>
+      </div>
+
+      <div class="row cols2">
+        <div>
+          <label>Observação (opcional)</label>
+          <input id="v_note" placeholder="Ex: turno, comissão..." disabled="">
+        </div>
+        <div class="btns" style="align-items:end">
+          <button class="btn ok" id="btnAddVendedor" disabled="">Salvar vendedor</button>
+          <button class="btn" id="btnClearVendedor" disabled="">Limpar</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Vendedores cadastrados</h2>
+      <div style="overflow:auto;max-height:540px">
+        <table>
+          <thead>
+            <tr><th>Vendedor</th><th>Telefone</th><th>Obs</th><th></th></tr>
+          </thead>
+          <tbody id="vendedorTable">
+        <tr>
+          <td>Vendedor fictício</td>
+          <td></td>
+          <td class="small muted"></td>
+          <td class="right"><button class="btn bad small" data-del="00000000-0000-4000-8000-000000000003" disabled="">Excluir</button></td>
+        </tr>
+      </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <section id="tab-venda" class="grid cols2">
+    <div class="card">
+      <h2>Nova venda</h2>
+      <div id="cartDraftStatus" class="warnBox small" role="status" aria-live="polite" data-status="editing"><p>Rascunho salvo neste navegador. Observações livres não são guardadas.</p></div>
+
+      <div class="row cols3">
+        <div>
+          <label>Cliente</label>
+          <!-- Combobox pesquisável. O <select id="sale_client"> continua
+               existindo (escondido) e segue sendo a ÚNICA fonte do id do
+               cliente: btnFinalize, WhatsApp, PDF de orçamento e os
+               resets leem ele exatamente como antes. O input abaixo é só
+               a camada visível de busca. -->
+          <div class="combo" id="sale_clientCombo">
+            <input id="sale_clientBusca" autocomplete="off" placeholder="Cliente não informado" disabled="">
+            <div class="comboList hide" id="sale_clientLista"></div>
+          </div>
+          <select id="sale_client" class="hide" disabled=""><option value="">Cliente não informado</option><option value="00000000-0000-4000-8000-000000000002">Cliente fictício</option></select>
+        </div>
+
+        <div>
+          <label>Vendedor</label>
+          <select id="sale_vendedor" disabled=""><option value="">Vendedor não informado</option><option value="00000000-0000-4000-8000-000000000003">Vendedor fictício</option></select>
+        </div>
+
+        <div>
+          <label>Canal</label>
+          <select id="sale_channel" disabled="">
+            <option value="Loja">Loja</option>
+            <option value="Trafego">Tráfego pago</option>
+            <option value="WhatsApp">WhatsApp</option>
+            <option value="Instagram">Instagram</option>
+            <option value="Indicacao">Indicação</option>
+            <option value="Outro">Outro</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="row cols2" style="margin-top:10px">
+        <div>
+          <label>Tipo</label>
+          <select id="sale_kind" disabled="">
+            <option value="Venda">Venda</option>
+            <option value="Troca">Troca</option>
+          </select>
+        </div>
+
+        <div>
+          <label>Tabela de preço</label>
+          <select id="sale_price_tier" disabled="">
+            <option value="Atacado">Atacado</option>
+            <option value="Varejo">Varejo</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- A forma de pagamento deixou de ser digitada aqui: ela é
+           preenchida pelo que for de fato registrado em "Registrar
+           pagamento" (uma forma = aquela; duas ou mais = Misto). O
+           select continua no DOM, escondido, porque btnFinalize,
+           WhatsApp, PDF e os relatórios leem .value — mesmo padrão do
+           combobox de cliente. -->
+      <select id="sale_pay" class="hide" disabled=""><option value="Pendente">Pendente</option></select>
+
+      <div id="trocaWarn" class="dangerBox small hide" style="margin-top:10px">
+        Atenção: este cliente já tem troca registrada. Pela regra, não pode fazer 2ª troca.
+      </div>
+
+      <!-- Parcelas agora são informadas ao registrar o pagamento, junto
+           com a forma. Mantido escondido: sale_inst ainda é lido pelo
+           PDF/WhatsApp de orçamento. -->
+      <div class="row cols2 hide" style="margin-top:10px">
+        <div id="instWrap" class="hide">
+          <label>Parcelas</label>
+          <select id="sale_inst" disabled="">
+            <option value="2">2x</option>
+            <option value="3">3x</option>
+            <option value="4">4x</option>
+            <option value="5">5x</option>
+            <option value="6">6x</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="sep"></div>
+
+      <h2>Adicionar itens</h2>
+
+      <div class="row cols2">
+        <div>
+          <label>Barcode (bipar)</label>
+          <input id="sale_barcode" placeholder="Bipe e aperte Enter" disabled="">
+        </div>
+        <div>
+          <button class="btn" id="btnManualAdd" style="margin-top:22px" disabled="">+ Adicionar manual (buscar produto)</button>
+        </div>
+      </div>
+
+      <div class="row cols2">
+        <div>
+          <label>Desconto (R$)</label>
+          <input id="sale_discount" type="number" step="0.01" value="0" disabled="">
+        </div>
+        <div class="chk" style="margin-top:22px">
+          <input id="overrideTroca" type="checkbox" disabled="">
+          <label for="overrideTroca" style="margin:0">Liberar 2ª troca (exceção)</label>
+        </div>
+      </div>
+
+      <div class="row">
+        <div>
+          <label>Observação</label>
+          <input id="sale_note" placeholder="Adicione observações em Editar após confirmar a venda" disabled="">
+          <div class="muted small">Observações livres não são guardadas no rascunho. Inclua-as em Editar depois que a venda for confirmada.</div>
+        </div>
+      </div>
+
+      <div class="sep"></div>
+
+      <div style="overflow:auto;max-height:340px">
+        <table>
+          <thead>
+            <tr><th>Item</th><th>Grade</th><th class="right">Qtd</th><th class="right">Preço</th><th class="right">Total</th><th></th></tr>
+          </thead>
+          <tbody id="saleItems">
+        <tr>
+          <td><div>Produto fictício</div><div class="muted small">Azul fictício</div></td>
+          <td>G2</td>
+          <td class="right">
+            <input type="number" min="1" step="1" value="45" data-qty="0" style="max-width:90px;text-align:right" disabled="">
+          </td>
+          <td class="right">R$&nbsp;50,00</td>
+          <td class="right">R$&nbsp;2.250,00</td>
+          <td class="right"><button class="btn bad small" data-rm="0" disabled="">Remover</button></td>
+        </tr>
+      </tbody>
+        </table>
+      </div>
+
+      <div class="sep"></div>
+
+      <div class="kpi six">
+        <div class="box"><div class="t">Subtotal</div><div class="v" id="sale_sub">R$&nbsp;2.250,00</div></div>
+        <div class="box"><div class="t">Desconto</div><div class="v" id="sale_disc">R$&nbsp;0,00</div></div>
+        <div class="box"><div class="t">Total (bruto)</div><div class="v" id="sale_total">R$&nbsp;2.250,00</div></div>
+        <div class="box"><div class="t">Taxas do cartão</div><div class="v" id="sale_fee">R$&nbsp;0,00</div></div>
+        <div class="box"><div class="t">Líquido a receber</div><div class="v" id="sale_net">R$&nbsp;2.250,00</div></div>
+        <div class="box"><div class="t">Lucro estimado</div><div class="v" id="sale_profit">R$&nbsp;1.125,00</div></div>
+      </div>
+
+      <div class="sep"></div>
+
+      <div class="btns">
+        <button class="btn ok" id="btnFinalize" disabled="">Lançar Venda (Pendente)</button>
+        <button class="btn" id="btnClearSale" disabled="">Limpar</button>
+      </div>
+
+      <div class="sep"></div>
+      <div class="muted small">
+        A venda entra como <b>pendente</b>. A forma de pagamento e a taxa do cartão são definidas ao registrar o pagamento — as taxas você ajusta em <b>Financeiro › Taxas do cartão</b>.
+      </div>
+    </div>
+
+    <!-- align-self:start só neste card: o grid esticava ele até a altura
+         da coluna da esquerda, sobrando um bloco branco embaixo da lista.
+         Escopado aqui pra não mexer no .grid, que é usado em outras abas. -->
+    <div class="card" style="display:flex;flex-direction:column;align-self:start">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px">
+        <h2 style="margin:0">Vendas recentes</h2>
+        <button id="btnVerTodasVendas" style="background: none; color: var(--accent); font-weight: 600; font-size: 13px; cursor: pointer; padding: 4px 2px; visibility: hidden;" disabled="">Ver todas</button>
+      </div>
+      <!-- max-height só entra em ação no "Ver todas"; com 8 vendas o card
+           acompanha o conteúdo, sem sobra branca. -->
+      <div id="salesList" style="overflow:auto;max-height:70vh;margin-top:8px"><div class="muted small" style="padding:16px 2px">Nenhuma venda lançada ainda.</div></div>
+    </div>
+  </section>
+
+  <section id="tab-relatorios" class="grid hide">
+    <div class="card">
+      <h2>Relatório mensal</h2>
+
+      <div class="row cols3">
+        <div>
+          <label>Mês</label>
+          <input id="r_month" type="month" disabled="">
+        </div>
+        <div>
+          <label>Filtrar por canal</label>
+          <select id="r_channel" disabled="">
+            <option value="">Todos</option>
+            <option value="Loja">Loja</option>
+            <option value="Trafego">Tráfego pago</option>
+            <option value="WhatsApp">WhatsApp</option>
+            <option value="Instagram">Instagram</option>
+            <option value="Indicacao">Indicação</option>
+            <option value="Outro">Outro</option>
+          </select>
+        </div>
+        <div>
+          <label>Filtrar por pagamento</label>
+          <select id="r_pay" disabled="">
+            <option value="">Todos</option>
+            <option value="PIX">PIX</option>
+            <option value="Dinheiro">Dinheiro</option>
+            <option value="CartaoAVista">Cartão (à vista)</option>
+            <option value="CartaoParcelado">Cartão (parcelado)</option>
+            <option value="Misto">Misto</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="btns" style="margin-top:10px">
+        <button class="btn ok" id="btnRunReport" disabled="">Gerar</button>
+        <button class="btn warn" id="btnExportReportPDF" disabled="">Exportar PDF</button>
+      </div>
+
+      <div class="sep"></div>
+
+      <div class="kpi" id="reportKPI">
+      <div class="box"><div class="t">Vendas</div><div class="v">0</div></div>
+      <div class="box"><div class="t">Faturamento (bruto)</div><div class="v">R$&nbsp;0,00</div></div>
+      <div class="box"><div class="t">Taxas</div><div class="v">R$&nbsp;0,00</div></div>
+      <div class="box"><div class="t">Líquido</div><div class="v">R$&nbsp;0,00</div></div>
+      <div class="box"><div class="t">Lucro</div><div class="v">R$&nbsp;0,00</div></div>
+      <div class="box"><div class="t">Ticket médio (bruto)</div><div class="v">R$&nbsp;0,00</div></div>
+    </div>
+
+      <div class="sep"></div>
+
+      <h2>Top produtos (quantidade)</h2>
+      <div style="overflow:auto;max-height:320px">
+        <table>
+          <thead><tr><th>Produto</th><th>Barcode</th><th>Grade</th><th class="right">Qtd</th><th class="right">Bruto</th><th class="right">Líquido</th></tr></thead>
+          <tbody id="topProducts"></tbody>
+        </table>
+      </div>
+
+      <div class="sep"></div>
+      <h2>Resumo por canal</h2>
+      <div style="overflow:auto;max-height:260px">
+        <table>
+          <thead><tr><th>Canal</th><th class="right">Vendas</th><th class="right">Bruto</th><th class="right">Líquido</th><th class="right">Lucro</th></tr></thead>
+          <tbody id="byChannel"><tr><td colspan="5" class="muted">Sem dados no período.</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <section id="tab-financeiro" class="hide">
+    <div>
+      
+      <div class="card">
+        <h2>Dashboard Financeiro - Visão Geral</h2>
+        
+        <div class="row cols3">
+          <div>
+            <div style="background:#f0fdf4;border:1.5px solid #86efac;border-radius:12px;padding:16px">
+              <div style="color:#16a34a;font-size:12px;font-weight:600;text-transform:uppercase;margin-bottom:8px">Entradas do Mês</div>
+              <div id="fin_dashEntradas" style="font-size:28px;font-weight:700;color:#15803d">R$ 0,00</div>
+            </div>
+          </div>
+          <div>
+            <div style="background:#fef2f2;border:1.5px solid #fca5a5;border-radius:12px;padding:16px">
+              <div style="color:#dc2626;font-size:12px;font-weight:600;text-transform:uppercase;margin-bottom:8px">Saídas do Mês</div>
+              <div id="fin_dashSaidas" style="font-size:28px;font-weight:700;color:#b91c1c">R$ 0,00</div>
+            </div>
+          </div>
+          <div>
+            <div id="fin_dashSaldoBox" style="background:#eff6ff;border:1.5px solid #93c5fd;border-radius:12px;padding:16px">
+              <div style="color:#2563eb;font-size:12px;font-weight:600;text-transform:uppercase;margin-bottom:8px">Saldo do Mês</div>
+              <div id="fin_dashSaldo" style="font-size:28px;font-weight:700;color:#1d4ed8">R$ 0,00</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="sep"></div>
+
+        <div class="row cols2">
+          <div class="card" style="background:#fafbfc">
+            <h3 style="font-size:14px;font-weight:600;margin:0 0 16px">Despesas por Categoria</h3>
+            <canvas id="chartCategorias" style="max-height:280px"></canvas>
+          </div>
+          <div class="card" style="background:#fafbfc">
+            <h3 style="font-size:14px;font-weight:600;margin:0 0 16px">Evolução Mensal (6 meses)</h3>
+            <canvas id="chartEvolucao" style="max-height:280px"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <div class="sep"></div>
+
+      <div class="card">
+        <h2>Taxas do cartão</h2>
+        <div class="warnBox small" style="margin-bottom:10px">
+          Percentual que a maquininha desconta. É daqui que o sistema puxa a taxa
+          quando a vendedora registra um pagamento — mude aqui e a próxima venda
+          já usa o valor novo. Vendas já registradas não mudam.
+        </div>
+
+        <div class="row cols3">
+          <div>
+            <label>Débito (%)</label>
+            <input id="fee_debito" type="number" step="0.01" min="0" disabled="">
+          </div>
+          <div>
+            <label>Crédito à vista — 1x (%)</label>
+            <input id="fee_credito_1" type="number" step="0.01" min="0" disabled="">
+          </div>
+          <div>
+            <label>Crédito acima de 6x (%)</label>
+            <input id="fee_credito_acima" type="number" step="0.01" min="0" disabled="">
+          </div>
+        </div>
+
+        <div class="sep"></div>
+        <div class="muted small" style="margin-bottom:6px">Crédito parcelado</div>
+        <div class="row cols5">
+          <div><label>2x (%)</label><input id="fee_credito_2" type="number" step="0.01" min="0" disabled=""></div>
+          <div><label>3x (%)</label><input id="fee_credito_3" type="number" step="0.01" min="0" disabled=""></div>
+          <div><label>4x (%)</label><input id="fee_credito_4" type="number" step="0.01" min="0" disabled=""></div>
+          <div><label>5x (%)</label><input id="fee_credito_5" type="number" step="0.01" min="0" disabled=""></div>
+          <div><label>6x (%)</label><input id="fee_credito_6" type="number" step="0.01" min="0" disabled=""></div>
+        </div>
+
+        <div class="btns" style="margin-top:12px">
+          <button class="btn ok" id="btnSalvarTaxas" disabled="">Salvar taxas</button>
+        </div>
+        <div id="taxasInfo" class="muted small" style="margin-top:8px"></div>
+      </div>
+
+      <div class="card">
+        <h2>Fluxo de Caixa - Visão Mensal</h2>
+        
+        <div class="row cols4">
+          <div>
+            <label>De</label>
+            <input type="date" id="fin_fluxoDataInicio" disabled="">
+          </div>
+          <div>
+            <label>Até</label>
+            <input type="date" id="fin_fluxoDataFim" disabled="">
+          </div>
+          <div>
+            <label>Tipo</label>
+            <select id="fin_fluxoTipo" disabled="">
+              <option value="">Todas</option>
+              <option value="pagar">Contas a Pagar</option>
+              <option value="receber">Contas a Receber</option>
+            </select>
+          </div>
+          <div>
+            <label>Status</label>
+            <select id="fin_fluxoStatus" disabled="">
+              <option value="">Todos</option>
+              <option value="pendente">Pendentes</option>
+              <option value="pago">Pagas/Recebidas</option>
+              <option value="atrasado">Atrasadas</option>
+            </select>
+          </div>
+        </div>
+        <div class="muted small" style="margin-top:6px">Filtra pela data de vencimento da conta. Deixe "De"/"Até" em branco pra ver todas as datas.</div>
+
+        <div class="sep"></div>
+
+        <div class="kpi">
+          <div class="box">
+            <div class="t">Entradas do Mês</div>
+            <div class="v" id="fin_fluxoEntradas" style="color:#10b981">R$ 0,00</div>
+          </div>
+          <div class="box">
+            <div class="t">Saídas do Mês</div>
+            <div class="v" id="fin_fluxoSaidas" style="color:#ef4444">R$ 0,00</div>
+          </div>
+          <div class="box">
+            <div class="t">Saldo do Mês</div>
+            <div class="v" id="fin_fluxoSaldo">R$ 0,00</div>
+          </div>
+          <div class="box">
+            <div class="t">Total de Contas</div>
+            <div class="v" id="fin_fluxoTotal">0</div>
+          </div>
+        </div>
+
+        <div class="sep"></div>
+
+        <div style="overflow-x:auto;max-height:500px">
+          <table>
+            <thead>
+              <tr>
+                <th style="width:90px">Data</th>
+                <th style="width:30%">Descrição</th>
+                <th style="width:100px">Tipo</th>
+                <th style="width:20%">Categoria/Cliente</th>
+                <th class="right" style="width:100px">Valor</th>
+                <th style="width:120px">Status</th>
+              </tr>
+            </thead>
+            <tbody id="fin_tabelaFluxo"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="sep"></div>
+
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+          <h2 style="margin:0">Contas a Pagar</h2>
+          <button class="btn ok" id="btnNovaPagar" disabled="">+ Nova Conta a Pagar</button>
+        </div>
+        
+        <div class="row cols3">
+          <div>
+            <label>Filtrar por status</label>
+            <select id="fin_filtroPagarStatus" disabled="">
+              <option value="">Todas</option>
+              <option value="pendente">Pendentes</option>
+              <option value="pago">Pagas</option>
+              <option value="atrasado">Atrasadas</option>
+            </select>
+          </div>
+          <div>
+            <label>Filtrar por categoria</label>
+            <select id="fin_filtroPagarCategoria" disabled="">
+              <option value="">Todas</option>
+            </select>
+          </div>
+          <div>
+            <label>Buscar</label>
+            <input id="fin_buscaPagar" placeholder="Descrição..." disabled="">
+          </div>
+        </div>
+
+        <div class="sep"></div>
+        
+        <div style="overflow-x:auto;max-height:400px">
+          <table>
+            <thead>
+              <tr>
+                <th>Descrição</th>
+                <th>Categoria</th>
+                <th>Valor</th>
+                <th>Vencimento</th>
+                <th>Status</th>
+                <th>Recorrência</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="fin_tabelaPagar"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="sep"></div>
+
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+          <h2 style="margin:0">Contas a Receber</h2>
+          <button class="btn ok" id="btnNovaReceber" disabled="">+ Nova Conta a Receber</button>
+        </div>
+        
+        <div class="row cols3">
+          <div>
+            <label>Filtrar por status</label>
+            <select id="fin_filtroReceberStatus" disabled="">
+              <option value="">Todas</option>
+              <option value="pendente">Pendentes</option>
+              <option value="recebido">Recebidas</option>
+              <option value="atrasado">Atrasadas</option>
+            </select>
+          </div>
+          <div>
+            <label>Filtrar por cliente</label>
+            <select id="fin_filtroReceberCliente" disabled="">
+              <option value="">Todos</option>
+            </select>
+          </div>
+          <div>
+            <label>Buscar</label>
+            <input id="fin_buscaReceber" placeholder="Descrição..." disabled="">
+          </div>
+        </div>
+
+        <div class="sep"></div>
+        
+        <div style="overflow-x:auto;max-height:400px">
+          <table>
+            <thead>
+              <tr>
+                <th>Descrição</th>
+                <th>Cliente</th>
+                <th>Valor</th>
+                <th>Vencimento</th>
+                <th>Status</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="fin_tabelaReceber"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="sep"></div>
+
+      <div class="card">
+        <h2>Histórico de Pagamentos e Recebimentos</h2>
+        <div class="infoBox" style="margin-bottom:16px">
+          Todas as contas que já foram pagas ou recebidas aparecem aqui. Você pode cancelar um pagamento e reabrir a conta.
+        </div>
+        
+        <div class="row cols3">
+          <div>
+            <label>Filtrar por mês</label>
+            <select id="fin_historicoMes" disabled="">
+              <option value="">Todos os meses</option>
+            </select>
+          </div>
+          <div>
+            <label>Filtrar por tipo</label>
+            <select id="fin_historicoTipo" disabled="">
+              <option value="">Todas</option>
+              <option value="pagar">Contas Pagas</option>
+              <option value="receber">Contas Recebidas</option>
+            </select>
+          </div>
+          <div>
+            <label>Buscar</label>
+            <input id="fin_historicoBusca" placeholder="Descrição..." disabled="">
+          </div>
+        </div>
+
+        <div class="sep"></div>
+
+        <div style="overflow-x:auto;max-height:500px">
+          <table>
+            <thead>
+              <tr>
+                <th>Data Pagamento</th>
+                <th>Descrição</th>
+                <th>Tipo</th>
+                <th>Categoria/Cliente</th>
+                <th class="right">Valor</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="fin_tabelaHistorico"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="sep"></div>
+
+      <div class="card">
+        <h2>Categorias</h2>
+        <div class="infoBox" style="margin-bottom:16px">
+          Organize suas despesas e receitas por categorias para facilitar o controle financeiro.
+        </div>
+        
+        <div class="row cols2">
+          <div>
+            <label>Nova Categoria</label>
+            <input id="fin_novaCategoriaNome" placeholder="Ex: Marketing" disabled="">
+          </div>
+          <div>
+            <label>Tipo</label>
+            <select id="fin_novaCategoriaTipo" disabled="">
+              <option value="despesa">Despesa</option>
+              <option value="receita">Receita</option>
+            </select>
+          </div>
+        </div>
+        <div class="btns">
+          <button class="btn ok" id="btnAddCategoria" disabled="">Adicionar Categoria</button>
+        </div>
+
+        <div class="sep"></div>
+
+        <div class="row cols2">
+          <div>
+            <h3 style="font-size:14px;font-weight:600;margin:0 0 12px">Categorias de Despesas</h3>
+            <div id="fin_listaDespesas" style="display:flex;flex-wrap:wrap;gap:8px"></div>
+          </div>
+          <div>
+            <h3 style="font-size:14px;font-weight:600;margin:0 0 12px">Categorias de Receitas</h3>
+            <div id="fin_listaReceitas" style="display:flex;flex-wrap:wrap;gap:8px"></div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <section id="tab-backup" class="grid cols2 hide">
+    <div class="card">
+      <h2>Backup automático (Edge)</h2>
+      <div class="warnBox small">
+        Isso salva um arquivo JSON automaticamente na pasta que você escolher (ideal: OneDrive). Protege contra PC dar pau.
+      </div>
+      <div class="sep"></div>
+
+      <div class="row">
+        <div class="btns">
+          <button class="btn ok" id="btnAutoBackupEnable" disabled="">Ativar backup automático</button>
+          <button class="btn bad" id="btnAutoBackupDisable" disabled="">Desativar</button>
+          <button class="btn" id="btnAutoBackupNow" disabled="">Salvar agora</button>
+        </div>
+        <div class="sep"></div>
+        <div class="small">
+          <div><b>Status:</b> <span id="autoBackupStatus">Indisponível</span></div>
+          <div class="muted"><span id="autoBackupHint">Este navegador não suporta backup automático. Use Edge ou Chrome no Windows.</span></div>
+          <div class="muted"><span id="autoBackupLast"></span></div>
+        </div>
+
+        <div class="sep"></div>
+        <div class="chk">
+          <input id="blockSecondSwap" type="checkbox" checked="" disabled="">
+          <label for="blockSecondSwap" style="margin:0">Bloquear 2ª troca automaticamente</label>
+        </div>
+        <div class="muted small">
+          Se desmarcar, o sistema vai permitir trocar de novo, mas o contador continua registrando.
+        </div>
+        
+        <div class="sep"></div>
+        <h2>Contador de códigos VF</h2>
+        <div class="infoBox">
+          <b>Último código gerado:</b> <span id="lastCodeGenerated">Nenhum ainda</span>
+        </div>
+        <button class="btn warn" id="btnResetCounter" disabled="">Redefinir contador</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Backup manual</h2>
+      <div class="warnBox small">
+        Use se quiser enviar para WhatsApp ou guardar em pendrive.
+      </div>
+      <div class="sep"></div>
+      <div class="btns">
+        <button class="btn ok" id="btnExport" disabled="">Baixar backup (JSON)</button>
+      </div>
+
+    </div>
+
+    <div class="card">
+      <h2>Exportar catálogo (Nuvemshop)</h2>
+      <div class="warnBox small">
+        Gera um CSV no formato exato que a Nuvemshop aceita pra importar produtos em massa (Produtos → Importar, dentro do painel deles). Usa o preço <b>Varejo</b> — a Nuvemshop é a loja pro consumidor final, não pro cliente revendedor. Confira o arquivo gerado antes de importar de verdade lá.
+      </div>
+      <div class="sep"></div>
+      <div class="btns">
+        <button class="btn ok" id="btnExportNuvemshop" disabled="">Baixar CSV pra Nuvemshop</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Sincronização automática (Nuvemshop)</h2>
+      <div class="warnBox small">
+        Depois que a loja Nuvemshop estiver conectada, toda venda finalizada aqui já desconta o estoque lá também (produto por produto, pelo código de barras). Clique em "Sincronizar catálogo" sempre que adicionar produtos novos na Nuvemshop — é isso que ensina o sistema qual produto daqui corresponde a qual produto lá.
+      </div>
+      <div class="sep"></div>
+      <div class="btns">
+        <button class="btn ok" id="btnSyncNuvemshop" disabled="">Sincronizar catálogo com Nuvemshop</button>
+      </div>
+    </div>
+  </section>
+</main>
+</div>
+
+<div id="toast" class="toast"><b>Adicionado</b><div class="small muted">Produto fictício Azul fictício (G2)</div></div>
+
+<div id="modalGrade" class="modal hide">
+  <div class="modalBox">
+    <h2>Escolher grade</h2>
+    <div id="modalGradeInfo" class="muted small"></div>
+    <div class="sep"></div>
+    <div class="row cols3">
+      <button class="btn" data-grade="G1" disabled="">G1</button>
+      <button class="btn" data-grade="G2" disabled="">G2</button>
+      <button class="btn" data-grade="G3" disabled="">G3</button>
+      <button class="btn" data-grade="G4" disabled="">G4</button>
+      <button class="btn" data-grade="G5" disabled="">G5</button>
+    </div>
+    <div class="sep"></div>
+    <button class="btn bad" id="btnCancelGrade" disabled="">Cancelar</button>
+  </div>
+</div>
+
+<div id="modalManual" class="modal hide">
+  <div class="modalBox wide">
+    <h2>Adicionar produto manual</h2>
+    <div class="row">
+      <div>
+        <label>Buscar por nome, cor, código, SKU...</label>
+        <input id="manual_search" placeholder="Ex: blusa pistache" disabled="">
+      </div>
+    </div>
+    <div id="manual_searchInfo" class="muted small" style="margin-top:6px"></div>
+    <div class="sep"></div>
+    <div class="modalTabela">
+      <table>
+        <colgroup>
+          <col class="colProduto"><col class="colCodigo"><col class="colGrade">
+          <col class="colNum"><col class="colNum"><col class="colNum"><col class="colBtn">
+        </colgroup>
+        <thead>
+          <tr><th>Produto</th><th>Código</th><th>Grade</th><th class="right">Estoque</th><th class="right">Atacado</th><th class="right">Varejo</th><th></th></tr>
+        </thead>
+        <tbody id="manualProductTable"></tbody>
+      </table>
+    </div>
+    <div class="sep"></div>
+    <button class="btn bad" id="btnCancelManual" disabled="">Cancelar</button>
+  </div>
+</div>
+
+<!-- Detalhe da venda (drawer lateral). Só apresentação: todas as ações
+     chamam as MESMAS funções que os botões da tabela antiga chamavam. -->
+<div id="saleDrawerOverlay" class="drawerOverlay"></div>
+<aside id="saleDrawer" class="drawer" aria-hidden="true">
+  <div class="drawerHead">
+    <div style="min-width:0">
+      <h3 id="sd_cliente">—</h3>
+      <div id="sd_sub" class="muted small" style="margin-top:3px"></div>
+    </div>
+    <button class="btn small" id="btnCloseDrawer" title="Fechar" disabled="">✕</button>
+  </div>
+  <div class="drawerBody" id="sd_body"></div>
+  <div class="drawerFoot" id="sd_foot"></div>
+</aside>
+
+<!-- Edição de venda já lançada. Só metadados: nada que mexa em
+     dinheiro, estoque ou preço. Ver abrirEdicaoVenda(). -->
+<div id="modalEditarVenda" class="modal hide">
+  <div class="modalBox">
+    <h2>Editar venda</h2>
+    <div id="ev_info" class="muted small" style="margin-bottom:10px"></div>
+
+    <div class="warnBox small" style="margin-bottom:12px">
+      Aqui dá pra corrigir quem vendeu, pra quem, por onde veio e a observação.
+      <b>Itens, valores e pagamentos não mudam por aqui</b> — eles mexem em estoque
+      e financeiro. Se a peça ou o valor estiver errado, exclua a venda e lance de novo.
+    </div>
+
+    <div class="row cols2">
+      <div>
+        <label>Cliente</label>
+        <select id="ev_client" disabled=""></select>
+      </div>
+      <div>
+        <label>Vendedor</label>
+        <select id="ev_vendedor" disabled=""></select>
+      </div>
+    </div>
+
+    <div class="row cols2" style="margin-top:10px">
+      <div>
+        <label>Canal</label>
+        <select id="ev_channel" disabled="">
+          <option value="Loja">Loja</option>
+          <option value="Trafego">Tráfego pago</option>
+          <option value="WhatsApp">WhatsApp</option>
+          <option value="Instagram">Instagram</option>
+          <option value="Indicacao">Indicação</option>
+          <option value="Outro">Outro</option>
+        </select>
+      </div>
+      <div>
+        <label>Observação</label>
+        <input id="ev_note" placeholder="Ex: combinado, referência..." disabled="">
+      </div>
+    </div>
+
+    <div class="sep"></div>
+    <div class="btns">
+      <button class="btn ok" id="btnSalvarEdicaoVenda" disabled="">Salvar alterações</button>
+      <button class="btn" id="btnFecharEdicaoVenda" disabled="">Cancelar</button>
+    </div>
+  </div>
+</div>
+
+<div id="modalPayments" class="modal hide">
+  <div class="modalBox">
+    <h2>Gerenciar pagamentos</h2>
+    <div id="paymentSaleInfo" class="small"></div>
+    <div class="sep"></div>
+    
+    <div class="row cols2">
+      <div>
+        <label>Valor do pagamento (R$)</label>
+        <input id="payment_value" type="number" step="0.01" placeholder="0,00" disabled="">
+      </div>
+      <div>
+        <label>Data</label>
+        <input id="payment_date" type="date" disabled="">
+      </div>
+    </div>
+    
+    <div class="row cols2">
+      <div>
+        <label>Forma de pagamento</label>
+        <select id="payment_method" disabled="">
+          <option value="PIX">PIX</option>
+          <option value="Dinheiro">Dinheiro</option>
+          <option value="Debito">Débito</option>
+          <option value="Credito">Crédito</option>
+        </select>
+      </div>
+      <div id="payment_installments_container">
+        <label>Parcelas</label>
+        <select id="payment_installments" disabled="">
+          <option value="1">1x</option>
+          <option value="2">2x</option>
+          <option value="3">3x</option>
+          <option value="4">4x</option>
+          <option value="5">5x</option>
+          <option value="6">6x</option>
+        </select>
+      </div>
+    </div>
+    
+    <div class="row">
+      <div>
+        <label>Observação (opcional)</label>
+        <input id="payment_note" placeholder="Ex: PIX confirmado..." disabled="">
+      </div>
+    </div>
+    
+    <div class="btns" style="margin-top:10px">
+      <button class="btn ok" id="btnAddPayment" disabled="">Registrar pagamento</button>
+    </div>
+    
+    <div class="sep"></div>
+    <h2>Histórico de pagamentos</h2>
+    <div style="max-height:240px;overflow:auto">
+      <table>
+        <thead>
+          <tr><th>Data</th><th>Método</th><th class="right">Valor</th><th class="right">Taxa</th><th class="right">Líquido</th></tr>
+        </thead>
+        <tbody id="paymentHistory"></tbody>
+      </table>
+    </div>
+    
+    <div class="sep"></div>
+    <button class="btn" id="btnClosePayments" disabled="">Fechar</button>
+  </div>
+</div>
+
+<div id="modalStockManual" class="modal hide">
+  <div class="modalBox wide">
+    <h2>Entrada manual de estoque</h2>
+    <div class="row">
+      <div>
+        <label>Buscar por nome, cor, código, SKU...</label>
+        <input id="stock_manual_search" placeholder="Ex: blusa pistache" disabled="">
+      </div>
+    </div>
+    <div id="stock_manual_searchInfo" class="muted small" style="margin-top:6px"></div>
+    <div class="sep"></div>
+    <div class="modalTabela">
+      <table>
+        <colgroup>
+          <col class="colProduto"><col class="colGrade">
+          <col class="colNum"><col class="colNum"><col class="colBtn">
+        </colgroup>
+        <thead>
+          <tr><th>Produto</th><th>Grade</th><th class="right">Estoque atual</th><th class="right">Custo</th><th></th></tr>
+        </thead>
+        <tbody id="stockManualProductTable"></tbody>
+      </table>
+    </div>
+    <div class="sep"></div>
+    <button class="btn bad" id="btnCancelStockManual" disabled="">Cancelar</button>
+  </div>
+</div>
+
+<div id="modalStockEntry" class="modal hide">
+  <div class="modalBox">
+    <h2>Confirmar entrada</h2>
+    <div id="stockEntryInfo" class="small"></div>
+    <div class="sep"></div>
+    
+    <div class="row cols2">
+      <div>
+        <label>Quantidade</label>
+        <input id="stock_entry_qty" type="number" step="1" min="1" value="1" disabled="">
+      </div>
+      <div>
+        <label>Atualizar custo (opcional)</label>
+        <input id="stock_entry_cost" type="number" step="0.01" placeholder="Deixe vazio para manter" disabled="">
+      </div>
+    </div>
+    
+    <div class="row">
+      <div>
+        <label>Observação</label>
+        <input id="stock_entry_note" placeholder="Ex: reposição, fornecedor..." disabled="">
+      </div>
+    </div>
+    
+    <div class="btns" style="margin-top:10px">
+      <button class="btn ok" id="btnConfirmStockEntry" disabled="">Confirmar entrada</button>
+      <button class="btn" id="btnCancelStockEntry" disabled="">Cancelar</button>
+    </div>
+  </div>
+</div>
+
+<div id="modalContaPagar" class="modal" style="display:none">
+  <div class="modalBox" style="max-width:600px">
+    <h2 id="modalPagarTitulo">Nova Conta a Pagar</h2>
+    <input type="hidden" id="editPagarId" disabled="">
+    
+    <div class="row cols2">
+      <div>
+        <label>Descrição</label>
+        <input id="pagarDescricao" placeholder="Ex: Aluguel Loja" disabled="">
+      </div>
+      <div>
+        <label>Categoria</label>
+        <select id="pagarCategoria" disabled=""></select>
+      </div>
+    </div>
+
+    <div class="row cols2">
+      <div>
+        <label>Valor (R$)</label>
+        <input id="pagarValor" type="number" step="0.01" placeholder="0,00" disabled="">
+      </div>
+      <div>
+        <label>Data Vencimento</label>
+        <input id="pagarVencimento" type="date" disabled="">
+      </div>
+    </div>
+
+    <div class="row cols2">
+      <div>
+        <label>Recorrência</label>
+        <select id="pagarRecorrencia" disabled="">
+          <option value="unica">Única (paga 1 vez)</option>
+          <option value="semanal">Semanal</option>
+          <option value="mensal">Mensal</option>
+        </select>
+      </div>
+      <div id="divPagarParcelas" style="display:none">
+        <label>Total de Parcelas</label>
+        <input id="pagarParcelas" type="number" min="1" value="1" disabled="">
+      </div>
+    </div>
+
+    <div>
+      <label>Observação (opcional)</label>
+      <input id="pagarObs" placeholder="Ex: Pago toda segunda-feira" disabled="">
+    </div>
+
+    <div class="sep"></div>
+    <div class="btns">
+      <button class="btn ok" id="btnSalvarPagar" disabled="">Salvar</button>
+      <button class="btn" id="btnCancelarPagar" disabled="">Cancelar</button>
+    </div>
+  </div>
+</div>
+
+<div id="modalContaReceber" class="modal" style="display:none">
+  <div class="modalBox" style="max-width:600px">
+    <h2 id="modalReceberTitulo">Nova Conta a Receber</h2>
+    <input type="hidden" id="editReceberId" disabled="">
+    
+    <div class="row cols2">
+      <div>
+        <label>Descrição</label>
+        <input id="receberDescricao" placeholder="Ex: Venda à prazo" disabled="">
+      </div>
+      <div>
+        <label>Cliente (opcional)</label>
+        <select id="receberCliente" disabled="">
+          <option value="">Nenhum</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="row cols2">
+      <div>
+        <label>Valor (R$)</label>
+        <input id="receberValor" type="number" step="0.01" placeholder="0,00" disabled="">
+      </div>
+      <div>
+        <label>Data Vencimento</label>
+        <input id="receberVencimento" type="date" disabled="">
+      </div>
+    </div>
+
+    <div>
+      <label>Forma de Recebimento</label>
+      <select id="receberForma" disabled="">
+        <option value="PIX">PIX</option>
+        <option value="Cartão Crédito">Cartão Crédito</option>
+        <option value="Cartão Débito">Cartão Débito</option>
+        <option value="Dinheiro">Dinheiro</option>
+      </select>
+    </div>
+
+    <div>
+      <label>Observação (opcional)</label>
+      <input id="receberObs" placeholder="Detalhes..." disabled="">
+    </div>
+
+    <div class="sep"></div>
+    <div class="btns">
+      <button class="btn ok" id="btnSalvarReceber" disabled="">Salvar</button>
+      <button class="btn" id="btnCancelarReceber" disabled="">Cancelar</button>
+    </div>
+  </div>
+</div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+</body></html>

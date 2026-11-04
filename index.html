@@ -1309,6 +1309,7 @@
   <section id="tab-venda" class="grid cols2">
     <div class="card">
       <h2>Nova venda</h2>
+      <div id="cartDraftStatus" class="warnBox small" role="status" aria-live="polite"><p>Preparando proteção do carrinho…</p></div>
 
       <div class="row cols3">
         <div>
@@ -1417,7 +1418,8 @@
       <div class="row">
         <div>
           <label>Observação</label>
-          <input id="sale_note" placeholder="Ex: combinado, referência..." />
+          <input id="sale_note" placeholder="Adicione observações em Editar após confirmar a venda" />
+          <div class="muted small">Observações livres não são guardadas no rascunho. Inclua-as em Editar depois que a venda for confirmada.</div>
         </div>
       </div>
 
@@ -2307,6 +2309,9 @@
 <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
 <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
 
+<script src="cart-draft-store.js"></script>
+<script src="cart-draft-ui.js"></script>
+<script src="cart-draft-app.js"></script>
 <script>
   /* =========================
      LOGIN (nome + PIN sobre Supabase Auth)
@@ -6321,6 +6326,7 @@
   });
 
   function handleBarcodeInput(code){
+    if(!cartDraftController?.canEdit()) return;
     if(!code) return;
     const matches = findProductsByBarcode(code);
     
@@ -6443,6 +6449,7 @@
   });
 
   function addProductToSale(p){
+    if(!cartDraftController?.canEdit()) return toast("Carrinho protegido", "Resolva ou restaure o pedido guardado antes de editar.");
     if(toNum(p.stock)<=0) return toast("Sem estoque",`${p.name} está zerado.`);
 
     const existing = currentSale.items.find(it=>it.productId===p.id);
@@ -6468,7 +6475,7 @@
     const disc = toNum(document.getElementById("sale_discount")?.value || 0);
     const totalBruto = Math.max(0, sub - disc);
 
-    const pay = document.getElementById("sale_pay")?.value || "PIX";
+    const pay = document.getElementById("sale_pay")?.value || "Pendente";
     const inst = document.getElementById("sale_inst")?.value || "2";
 
     const fee = calcCardFee(totalBruto, pay, inst);
@@ -6538,121 +6545,14 @@
     });
 
     renderSaleTotals();
+    cartDraftChanged();
   }
 
-  document.getElementById("btnFinalize").addEventListener("click", async ()=>{
-    if(!currentSale.items.length) return toast("Sem itens","Bipe pelo menos 1 produto.");
-
-    const cid = document.getElementById("sale_client").value || "";
-    const vid = document.getElementById("sale_vendedor").value || "";
-    const kind = document.getElementById("sale_kind").value || "Venda";
-    const override = document.getElementById("overrideTroca").checked;
-    const c = cid ? findClientById(cid) : null;
-
-    if(kind === "Troca" && cid && settings.blockSecondSwap && !override){
-      const trocaCount = toNum(c?.trocaCount||0);
-      if(trocaCount >= 1){
-        return toast("Bloqueado","Este cliente já usou troca. Marque 'Liberar 2ª troca' apenas se for exceção.");
-      }
-    }
-
-    for(const it of currentSale.items){
-      const p = db.products.find(x=>x.id===it.productId);
-      if(!p) return toast("Erro","Produto não encontrado no cadastro.");
-      if(toNum(p.stock) < toNum(it.qty)) return toast("Estoque insuficiente",`${p.name} não tem quantidade suficiente.`);
-    }
-
-    const totals = saleTotals(currentSale);
-    const pay = document.getElementById("sale_pay").value || "";
-    const inst = document.getElementById("sale_inst").value || "";
-    const channel = document.getElementById("sale_channel").value || "Loja";
-    const note = document.getElementById("sale_note").value.trim();
-
-    const btn = document.getElementById("btnFinalize");
-    btn.disabled = true;
-    try {
-    // client_request_id: gerado uma vez, reenviado em qualquer retry — é o
-    // que faz create_sale() ser seguro contra duplo clique/toque (ver CLAUDE.md).
-    const clientRequestId = crypto.randomUUID();
-    const { data: saleRow, error } = await sb.rpc("create_sale", {
-      p_client_request_id: clientRequestId,
-      p_client_id: cid || null,
-      p_vendedor_id: vid || null,
-      p_channel: channel,
-      p_kind: kind,
-      p_pay: pay,
-      p_installments: pay === "CartaoParcelado" ? Number(inst) : 0,
-      p_discount: totals.disc,
-      p_note: note,
-      p_items: currentSale.items.map(it=>({ product_id: it.productId, qty: it.qty })),
-      p_price_tier: currentPriceTier()
-    });
-
-    if(error) return toast("Falhou", error.message);
-
-    // Espelha no cache local o que o servidor já fez de verdade (estoque
-    // baixado, stock_move gravado) — não recalcula nada, só reflete.
-    for(const it of currentSale.items){
-      const p = db.products.find(x=>x.id===it.productId);
-      if(p) p.stock = Math.max(0, toNum(p.stock) - toNum(it.qty));
-    }
-    await loadStockMovesFromSupabase();
-    pushStockToNuvemshop(currentSale.items.map(it=>it.barcode));
-
-    const sale = mapSaleFromDb({ ...saleRow, sale_items: currentSale.items.map(it=>({
-      product_id: it.productId, name: it.name, cat: it.cat, fabric: it.fabric,
-      size: it.size, price: it.price, cost: it.cost, qty: it.qty, barcode: it.barcode,
-      colorName: it.colorName || ""
-    })), sale_payments: [] });
-
-    if(kind === "Troca" && cid && c){
-      const newCount = toNum(c.trocaCount||0) + 1;
-      const { error: cErr } = await sb.from("clients").update({ troca_count: newCount }).eq("id", cid);
-      if(!cErr) c.trocaCount = newCount;
-    }
-
-    db.sales.unshift(sale);
-
-    toast("Finalizado","Venda #" + sale.id.slice(-6).toUpperCase() + " salva com sucesso!");
-
-    // Limpar tudo automaticamente após 1.5 segundos
-    setTimeout(()=>{
-      currentSale = { items:[], finalizedSaleId:null };
-      setSaleClient("");   // limpa o <select> e o texto visível de uma vez
-      document.getElementById("sale_vendedor").value = "";
-      document.getElementById("sale_channel").value = "Loja";
-      document.getElementById("sale_kind").value = "Venda";
-      document.getElementById("sale_pay").value = "PIX";
-      document.getElementById("sale_price_tier").value = "Atacado";
-      document.getElementById("sale_discount").value = "0";
-      document.getElementById("sale_note").value = "";
-      document.getElementById("overrideTroca").checked = false;
-      renderSale();
-      renderSalesTable();
-      toast("Pronto!","Sistema limpo para a próxima venda.");
-    }, 1500);
-
-    renderSale();
-    renderHome();
-    } finally {
-      btn.disabled = false;
-    }
+  document.getElementById("btnFinalize").addEventListener("click", ()=>{
+    if(!cartDraftController) return toast("Caixa bloqueado", "A proteção do carrinho ainda não está pronta.");
+    cartDraftController.finalize();
   });
-
-  document.getElementById("btnClearSale").addEventListener("click", ()=>{
-    currentSale = { items:[], finalizedSaleId:null };
-    setSaleClient("");   // limpa o <select> e o texto visível de uma vez
-    document.getElementById("sale_vendedor").value = "";
-    document.getElementById("sale_pay").value = "PIX";
-    document.getElementById("sale_channel").value = "Loja";
-    document.getElementById("sale_kind").value = "Venda";
-    document.getElementById("sale_price_tier").value = "Atacado";
-    document.getElementById("sale_discount").value = "0";
-    document.getElementById("sale_note").value = "";
-    document.getElementById("overrideTroca").checked = false;
-    toast("Venda limpa","Pronto para nova venda.");
-    renderSale();
-  });
+  document.getElementById("btnClearSale").addEventListener("click", ()=>cartDraftController?.discard());
 
   function sendWhatsApp(sale, isOrcamento = false){
     let saleData, c, v, inst, phone;
@@ -8071,6 +7971,7 @@
     await loadClientsFromSupabase();
     await loadVendedoresFromSupabase();
     await loadSalesFromSupabase();
+    db.clients.forEach(c=>{c.trocaCount=Math.max(toNum(c.trocaCount),db.sales.filter(s=>s.kind==="Troca"&&s.clientId===c.id).length);});
     await loadCategoriasFromSupabase();
     await loadContasFromSupabase();
     await loadCardFeesFromSupabase();
@@ -8091,6 +7992,7 @@
 
     (async ()=>{ try{ await initAutoBackup(); }catch{} })();
     detectZebra();
+    await initCartDraftApp();
   }
 </script>
 
