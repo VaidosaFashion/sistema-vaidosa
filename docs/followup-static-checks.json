@@ -1,0 +1,17 @@
+{
+  "status": "NOT_RUNTIME_VALIDATED",
+  "base_last_runtime_tested": "d4396796d4936be49d18c5e6e30537e6836a558c",
+  "branch": "prepare/mcp-transport-browser-20261105",
+  "http_prepared_test_cases": 24,
+  "browser_prepared_scenarios": 8,
+  "new_tests_executed": 0,
+  "new_target_code_executed": false,
+  "new_node_syntax_checks": "passed",
+  "python_ast": "passed",
+  "release_matches_migrations": "passed",
+  "git_whitespace": "passed",
+  "sandbox_probe_nested": "sandbox_apply Operation not permitted; target not loaded",
+  "sandbox_probe_outer": "exit134; target not loaded",
+  "further_execution_probes": false,
+  "real_credentials_oauth_production_changes": false
+}

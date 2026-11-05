@@ -22,3 +22,16 @@ try:
  print('PASS: unexpected column grant blocks installer; no columns/audit/function changes survive rollback')
 finally:
  query('revoke update(valor) on public.contas from authenticated')
+
+# Prepared follow-up case: inherited privileges must also abort atomically.
+# This new case has NOT been executed under the required follow-up OS sandbox.
+try:
+ query('create role vaidosa_inherited_fixture nologin; grant truncate on public.contas to vaidosa_inherited_fixture; grant vaidosa_inherited_fixture to authenticated')
+ r=subprocess.run(base+['-f','supabase/releases/20261105_install_blocks.sql'],capture_output=True,text=True,env=env,timeout=15)
+ assert r.returncode!=0 and 'Direitos efetivos inesperados' in r.stderr,r.stderr
+ assert query("select count(*) from information_schema.columns where table_schema='public' and table_name='contas' and column_name='operation_revision'")=='0'
+ assert query("select to_regclass('public.account_audit') is null")=='t'
+ assert query("select md5(pg_get_functiondef('"+signature+"'::regprocedure))")==before
+ print('PASS: inherited fixture privilege blocks installer atomically')
+finally:
+ query('revoke vaidosa_inherited_fixture from authenticated; drop owned by vaidosa_inherited_fixture; drop role vaidosa_inherited_fixture')

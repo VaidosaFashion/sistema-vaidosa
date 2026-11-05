@@ -19,6 +19,8 @@ select jsonb_build_object(
  'view_definition',pg_get_viewdef('public.v_contas'::regclass,true),
  'create_conta',(select jsonb_agg(jsonb_build_object('signature',pg_get_function_identity_arguments(p.oid),'hash',md5(pg_get_functiondef(p.oid)),'security_definer',p.prosecdef))
    from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='create_conta'),
+ 'role_memberships',(select jsonb_agg(jsonb_build_object('role',m.roleid::regrole::text,'member',m.member::regrole::text,'inherit',m.inherit_option,'set',m.set_option)) from pg_auth_members m where pg_has_role('authenticated',m.roleid,'MEMBER') or pg_has_role('anon',m.roleid,'MEMBER')),
+ 'effective_account_rights',(select jsonb_agg(jsonb_build_object('role',r,'table',t,'write_or_admin',has_table_privilege(r,t,'INSERT,UPDATE,DELETE,TRUNCATE,TRIGGER,REFERENCES'),'column_write',has_any_column_privilege(r,t,'INSERT,UPDATE,REFERENCES'))) from unnest(array['anon','authenticated']) r cross join unnest(array['public.contas','public.movimentacoes']) t),
  'already_installed',to_regprocedure('public.settle_account(uuid,uuid,bigint,date)') is not null
 ) as metadata;
 commit;

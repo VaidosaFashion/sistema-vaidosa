@@ -1,0 +1,30 @@
+# Preparação adicional MCP — NÃO VALIDADA EM EXECUÇÃO
+
+Esta etapa parte de `d439679`, último pacote que teve 220 testes JS e SQL local aprovados. Os novos módulos/ensaios abaixo tiveram apenas inspeção de fonte e sintaxe; **não herdam aprovação de runtime**. Não substitua o pacote anterior por esta branch em produção.
+
+## Implementação preparada
+
+- `mcp/streamable-http.cjs`: factory que recebe Web `Request` e devolve `Response`. Perfil **Streamable HTTP stateless com resposta JSON**, fixado em MCP `2025-11-25`; sem listener, servidor HTTP, portas, deploy ou leitura de ambiente. GET no endpoint responde 405 (SSE opcional não implementado), DELETE 405, notificações aceitas 202 sem corpo; initialize negocia a versão fixa. Demais requisições exigem `MCP-Protocol-Version`. Não há sessão emitida, resumption, SSE, WebSocket ou execução de ferramenta de escrita.
+- `mcp/http-identity.cjs`: verifier criptográfico/introspecção e autorização de negócio **obrigatoriamente injetados**. Não decodifica JWT como se fosse validação, não aceita papel vindo do modelo e não possui fallback permissivo. Confere issuer, audiência exata do recurso, exp/nbf, sujeito, grant ativo e interseção de escopos. `customerIds:null` é concessão explícita do autorizador; ausência do campo falha fechada. A autorização é reavaliada por requisição.
+- `mcp/read-contracts.cjs`: DTO versão1 por ferramenta; campos desconhecidos, getters/protótipos estranhos, valores monetários não inteiros, datas e paginação inválidas falham fechados. Projeta cópia mínima e não aceita CPF/contato/observações/XML/chaves extras. Nomes de produto ainda são texto de negócio; uma allowlist não prova ausência semântica de dados pessoais em conteúdo livre.
+- `mcp/http-fixture.cjs` e `http-fixture-demo.cjs`: simulação em memória usando `https://*.invalid`, tokens inventados e adapter fictício. Não é serviço de autenticação nem abre porta. A demonstração prepara initialize/notificação/lista/chamada usando Request/Response locais; **não foi executada**.
+- `tests/mcp-http.test.cjs`: casos preparados para wire HTTP, identidade, tenant/cliente, revogação, paginação, abuso, saída, concorrência e cancelamento. Quantidade exata no manifesto da entrega; nenhum resultado PASS desta etapa é declarado.
+
+## Controles e limites de fonte
+
+1. URLs canônicas HTTPS configuradas, Origin exato quando presente, Host coerente, sem confiança em X-Forwarded-Host/IP. Query-string/fragmento com token e sessão não emitida são rejeitados. Metadata de recurso protegido tem issuer/configuração fixa; nenhuma descoberta remota é feita pelo handler.
+2. Bearer fica somente no verifier. O adapter de negócio recebe identidade normalizada, sem token; não existe passthrough ao Supabase ou outra API. Verificador real precisa provar assinatura/introspecção, chaves/algoritmos confiáveis, audiência, revogação/deadline e falha fechada. O booleano `verified` é contrato de uma dependência confiável, não dado aceito do cliente.
+3. Cap de8 trabalhos ativos, inclusive dependência que continue após resposta504. Cotas autenticadas120/ator/minuto e500/minuto agregadas; tokens rejeitados não consomem a quota autenticada. Isso não elimina DoS de ingresso: gateway confiável, concorrência e proteção de abuso são pré-requisitos de implantação. Não inferir identidade/IP de headers fornecidos pelo chamador.
+4. Máximo16KiB de entrada e64KiB de resposta; timeout de5s e verificação de aborto em fronteiras assíncronas. Dependências precisam de cancelamento efetivo e limites próprios; a resposta504 não pode interromper à força código externo arbitrário. Se dependência ignora cancelamento, a reserva permanece ocupada e falha fechada até o trabalho terminar.
+5. Cache limitado64 serviços/10min com promessa reservada antes de await. Chave inclui sujeito, loja, permissões e restrições de cliente atuais, impedindo reaproveitar concessão antiga. Os adapters devem ser somente leitura e respeitar principal/sinal; nenhuma fábrica deve armazenar bearer ou supor que primeiro signal seja credencial permanente.
+6. Auditoria só método conhecido, resultado e identificador pseudônimo salgado por instância; sem payloads, tokens, URLs recebidas, valores, IDs de negócio ou mensagens externas. Ainda não é trilha persistente imutável: retenção/falha/integração futura precisam de decisão e autorização.
+
+**CORS:** esta preparação não habilita browser cross-origin. `allowedOrigins` valida origem, não concede CORS; OPTIONS/ACAO não foram implementados. O perfil é para cliente HTTP nativo/same-origin com headers adequados. Uma futura interface cross-origin exige preflight/headers restritos e testes próprios; não declarar que já funciona em navegador remoto.
+
+## Padrão, SDK e compatibilidade
+
+A implementação usa o perfil JSON permitido pela [especificação de transportes2025-11-25](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports) e a fronteira resource-server da [autorização MCP](https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization). São referências de contrato, não selo de conformidade.
+
+Em consulta documental de05/11/2026, o [SDK TypeScript oficial](https://github.com/modelcontextprotocol/typescript-sdk) apresenta v2 com pacotes separados `@modelcontextprotocol/server`/`client` e especificação2026-07-28; a linha v1 tem outro ciclo. Não foi escolhido, baixado ou instalado um artefato SDK novo. Não se afirma que o protocolo fixo2025 seja a última versão nem que negociará com todo cliente2026. A restrição atual de auditoria permite somente dependências já locais. Para futura implementação conectada, preferir transporte oficial versionado, revisar licença do release/lockfile/transitivas/avisos e portar estes contratos/testes, em vez de expandir transporte artesanal para OAuth complexo.
+
+Não foi ensaiado cliente SDK oficial, Codex, Claude Code/Desktop, serviço HTTPS ou servidor OAuth real. A implementação preparada pode exigir correções quando for executada. [Matriz de ativação](mcp-client-validation-plan.md).

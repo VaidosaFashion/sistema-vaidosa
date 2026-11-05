@@ -1,3 +1,9 @@
+# ADENDO DE PREPARAÇÃO — NÃO VALIDADO EM EXECUÇÃO
+
+Esta branch adiciona transporte/autorização MCP, ensaios de navegador e guard SQL ainda sem teste de execução. O último pacote testado é `d439679`, preservado em sua branch/ZIP anterior. Leia primeiro [docs/followup-validation.md](docs/followup-validation.md) e [preparação MCP](docs/mcp-transport-preparation.md). Os resultados históricos abaixo não validam o adendo.
+
+---
+
 # Vaidosa — ajustes locais por blocos
 
 Cópia isolada em `sistema-vaidosa-ajustes-2026-11-05`, branch `fix/audited-blocks-20261105`, baseada em `502e33d7490a3f1e6ded5dd55deb86af118db58f`. Esta entrega é para revisão; o site publicado continua nessa revisão. Não houve push, deploy, migração real ou alteração de venda/estoque/conta.

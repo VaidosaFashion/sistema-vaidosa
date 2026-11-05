@@ -359,5 +359,22 @@ create policy "active staff read accounts" on public.contas for select to authen
 using(exists(select 1 from public.profiles p where p.id=(select auth.uid()) and p.active and (p.is_admin or p.is_vendedora)));
 create policy "active staff read movements" on public.movimentacoes for select to authenticated
 using(exists(select 1 from public.profiles p where p.id=(select auth.uid()) and p.active and (p.is_admin or p.is_vendedora)));
+-- REVOKE direto não elimina direitos vindos de memberships. Falha integral
+-- se algum caminho herdado ainda permitir escrita ou administração.
+do $$
+declare t regclass; r text;
+begin
+ foreach t in array array['public.contas'::regclass,'public.movimentacoes'::regclass] loop
+  foreach r in array array['anon','authenticated'] loop
+   if has_table_privilege(r,t,'INSERT,UPDATE,DELETE,TRUNCATE,TRIGGER,REFERENCES')
+     or has_any_column_privilege(r,t,'INSERT,UPDATE,REFERENCES') then
+    raise exception 'Direitos efetivos inesperados em % para %; revisar memberships antes de instalar',t,r;
+   end if;
+  end loop;
+  if has_any_column_privilege('anon',t,'SELECT') then
+   raise exception 'Leitura anônima herdada inesperada em %; revisar memberships',t;
+  end if;
+ end loop;
+end $$;
 notify pgrst,'reload schema';
 commit;
