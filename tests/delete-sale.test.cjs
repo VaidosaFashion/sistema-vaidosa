@@ -44,6 +44,7 @@ function harness({ rpcError = null, fiscal = null, fiscalError = null, confirm =
   w.confirm = () => confirm;
   w.toast = (...args) => notifications.push(args);
   w.renderSale = w.renderHome = () => {};
+  w.loadProductsFromSupabase = async () => { w.db.products[0].stock=63; }; // canonical 65 minus concurrent sale of 2
   w.loadStockMovesFromSupabase = async () => { calls.reloads += 1; };
   w.pushStockToNuvemshop = barcodes => calls.sync.push([...barcodes]);
   w.applyStockEntry = async (product, qty) => {
@@ -149,12 +150,12 @@ test('canceling deletion invokes neither RPC nor table access', async t => {
   assert.deepEqual(h.calls.stock, []);
 });
 
-test('successful deletion uses only RPC and updates cached stock once', async t => {
+test('successful deletion reloads canonical stock after a concurrent sale instead of adding to stale cache', async t => {
   const h = harness();
   t.after(h.close);
   await h.click();
   assert.equal(h.w.db.sales.length, 0);
-  assert.equal(h.w.db.products[0].stock, 65);
+  assert.equal(h.w.db.products[0].stock, 63);
   assert.equal(h.calls.rpc.length, 1);
   assert.deepEqual(h.calls.writes, []);
   assert.deepEqual(h.calls.stock, []);
@@ -162,5 +163,5 @@ test('successful deletion uses only RPC and updates cached stock once', async t 
   assert.deepEqual(h.calls.sync, [['VF000001']]);
   await h.click();
   assert.equal(h.calls.rpc.length, 1);
-  assert.equal(h.w.db.products[0].stock, 65);
+  assert.equal(h.w.db.products[0].stock, 63);
 });

@@ -2,8 +2,10 @@
   "name": "sistema-vaidosa",
   "private": true,
   "scripts": {
-    "test": "node --test tests/*.test.cjs",
-    "preview": "node tests/preview-server.cjs"
+    "test": "node --require ./tests/network-guard.cjs --test --test-concurrency=1 tests/*.test.cjs",
+    "preview": "node tests/preview-server.cjs",
+    "preview:blocks": "node --require ./tests/network-guard.cjs tests/build-block-preview.cjs",
+    "mcp:fixture": "node mcp/server.cjs --fixture"
   },
   "devDependencies": {
     "jsdom": "26.1.0"

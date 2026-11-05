@@ -59,13 +59,15 @@ async function cartDraftValidate(draft, stillActive = () => true) {
     fresh.push(...data);
   }
   assertActive();
-  for (const item of draft.items) {
-    const row=fresh.find(p=>p.id===item.productId);
-    if (!row) throw new Error('Um produto do carrinho não está mais disponível. Confira os itens.');
-    if (row.stock < item.qty) throw new Error('Estoque insuficiente: '+row.name+'. O carrinho foi preservado.');
+  for (const row of fresh) {
     const cached=db.products.find(p=>p.id===row.id);
     const product={...cached,...row,priceAtacado:row.price_atacado,priceVarejo:row.price_varejo};
     if (cached) Object.assign(cached,product); else db.products.push(product);
+  }
+  for (const item of draft.items) {
+    const row=fresh.find(p=>p.id===item.productId);
+    if (!row) throw new Error('Um produto do carrinho não está mais disponível. Confira os itens.');
+    if (row.stock < item.qty) throw new Error('Estoque insuficiente: '+row.name+'. O carrinho foi preservado; o saldo exibido foi atualizado.');
   }
   cartDraftApplying=true;
   try { currentSale.items=draft.items.map(it=>cartDraftItem(db.products.find(p=>p.id===it.productId),it,draft.priceTier)); renderSale(); }

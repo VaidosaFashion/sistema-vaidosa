@@ -1,0 +1,27 @@
+psql:tests/sql/observed_privileges.sql:12: NOTICE:  PASS: risco de TRUNCATE reproduzido só em fixture local e revertido
+{"valid": true, "tables": 11, "rows": 11, "functions": 5, "limitation": "Valida integridade e estrutura locais; não é backup completo, não comprova a origem nem a restauração e não autoriza instalação."}
+NOTICE:  PASS: checkpoint recupera valores/tipos das 11 tabelas em temporarias locais
+NOTICE:  PASS: checkpoint recupera cinco definicoes originais apos migracao e reverte apenas o ensaio local
+psql:tests/sql/financial_edits.sql:110: NOTICE:  PASS: desconto, forma, datas, histórico, idempotência, revisões, limites, 60 itens, legado e estoque
+psql:tests/sql/financial_edits_extra.sql:49: NOTICE:  PASS: parcial, desconto isolado, taxa histórica, novas parcelas, retry INSERT e UPDATE direto negado
+psql:tests/sql/financial_edits_extra.sql:97: NOTICE:  PASS: matriz fiscal observada, constraints de status e rejeição definitiva
+psql:tests/sql/financial_edits_extra.sql:122: NOTICE:  PASS: limites e pagamento de outra venda
+psql:tests/sql/financial_edits_extra.sql:133: NOTICE:  PASS: novo pagamento usa taxa oficial e autor autenticado
+psql:tests/sql/financial_audit_privacy.sql:62: NOTICE:  PASS: CPF e futuras colunas preservados; auditoria restrita a campos financeiros
+psql:tests/sql/harden_sale_stock_rpcs.sql:166: NOTICE:  PASS: RPCs venda/estoque auth, descontos, itens, retry, exclusão repetida e constraints
+psql:tests/sql/table_privileges.sql:46: NOTICE:  PASS: grants mínimos, login preservado, TRUNCATE e DML financeiro direto bloqueados
+PASS: concurrent insert → stale correction, correction → excess insert rejection, simultaneous retry → one audit
+PASS: same-request concurrent last-item sale → one sale; concurrent delete → one stock restoration
+PASS: unexpected column grant blocks installer; no columns/audit/function changes survive rollback
+psql:tests/sql/stock_entry_requests.sql:28: NOTICE:  PASS: stock v2 blocks anon RPCs
+psql:tests/sql/stock_entry_requests.sql:42: NOTICE:  PASS: stock v2 checks active profiles on read/write
+psql:tests/sql/stock_entry_requests.sql:89: NOTICE:  PASS: stock v2 idempotency, payload conflict, canonical refresh, validation, private journal
+psql:tests/sql/stock_entry_requests.sql:101: NOTICE:  PASS: stock v2 request ownership
+psql:tests/sql/stock_entry_requests.sql:122: NOTICE:  PASS: stock v2 movement failure rolls back balance, cost, and request
+psql:tests/sql/stock_entry_requests.sql:134: NOTICE:  PASS: stock v2 safe retry after product deletion
+PASS: accounts same UUID concurrently -> one movement, revision and audit
+PASS: accounts different UUIDs, same revision -> exactly one success
+PASS: reversal vs settlement in both lock orders -> no lost history
+PASS: stock same UUID concurrently -> one increment and movement
+PASS: stock distinct UUIDs concurrently -> canonical sum preserved
+PASS: todas as migrações e consultas de auditoria em PostgreSQL local descartável

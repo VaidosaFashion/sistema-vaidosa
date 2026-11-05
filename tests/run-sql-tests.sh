@@ -51,4 +51,13 @@ VAIDOSA_TEST_SOCKET="$test_root" VAIDOSA_TEST_PORT="$test_port" python3 tests/sq
 run_sql docs/audit-sales-readonly.sql
 run_sql docs/audit-manual-estrutura.sql
 run_sql docs/deploy-postcheck.sql
+run_sql docs/blocks-preflight-readonly.sql
+VAIDOSA_TEST_SOCKET="$test_root" VAIDOSA_TEST_PORT="$test_port" python3 tests/sql/install_block_guards.py
+run_sql supabase/releases/20261105_install_blocks.sql
+run_sql docs/blocks-postcheck-readonly.sql
+run_sql tests/sql/accounts_integrity.sql
+run_sql tests/sql/stock_entry_requests.sql
+if [ -f tests/sql/accounts_stock_concurrency.py ]; then
+  VAIDOSA_TEST_SOCKET="$test_root" VAIDOSA_TEST_PORT="$test_port" python3 tests/sql/accounts_stock_concurrency.py
+fi
 printf '%s\n' 'PASS: todas as migrações e consultas de auditoria em PostgreSQL local descartável'

@@ -1,3 +1,11 @@
+# Estado e contratos atuais (05/11/2026)
+
+O histórico abaixo contém decisões e diagnósticos de várias versões antigas. Para esta revisão, a fonte atual é [docs/architecture.md](docs/architecture.md), os contratos de módulo e [docs/blocks-deployment.md](docs/blocks-deployment.md). Base publicada: `502e33d`. Os ajustes por blocos estão apenas em cópia/branch local, não instalados nem publicados. Leia também [LEIA-ME-AJUSTES.md](LEIA-ME-AJUSTES.md).
+
+Não reutilize comandos ou autorizações históricos de acesso remoto deste arquivo. A autorização atual limita os ensaios a fixtures locais, proíbe produção/push/publicação e não ativa MCP/credenciais. O schema real de contas ainda exige preflight específico antes de qualquer futura instalação.
+
+---
+
 # Sistema Vaidosa — contexto do projeto
 
 Leia este arquivo inteiro antes de mexer em qualquer coisa. Ele existe para que uma sessão nova (sua ou de outra IA) não precise reler o `index.html` inteiro (5000+ linhas) nem repetir a auditoria já feita.

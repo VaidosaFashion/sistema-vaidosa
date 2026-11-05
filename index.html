@@ -661,6 +661,13 @@
     #zebraStatusBadge.warn  {background:rgba(245,158,11,.12);color:#b45309;border-color:rgba(180,83,9,.2)}
     #zebraStatusBadge .dot  {width:7px;height:7px;border-radius:50%;background:currentColor}
     #zebraStatusBadge.ok .dot{animation:blink 2.2s ease-in-out infinite}
+
+    /* Layers are explicit: navigation < drawer < dialogs < feedback. */
+    .drawerOverlay{z-index:300}.drawer{z-index:301}.toast{z-index:1200}
+    .row.cols2,.row.cols3,.row.cols4,.row.cols5{grid-template-columns:repeat(auto-fit,minmax(min(100%,180px),1fr))}
+    .card:hover{transform:none}.table-wrap{max-width:100%;overflow:auto}
+    #dataFreshness{position:relative}#stockVariants td{overflow-wrap:anywhere}
+    #accountsRecovery:empty,#stockRecovery:empty{display:none}
   </style>
 </head>
 <body>
@@ -741,6 +748,9 @@
 
 <div class="main-container hide" id="appMain">
 <main class="wrap">
+  <div id="dataFreshness" class="infoBox hide" role="alert"></div>
+  <div class="btns"><button class="btn action" id="refreshBusinessData" type="button" onclick="refreshBusinessData()">Atualizar dados (mantém carrinho)</button></div>
+
   <section id="tab-home" class="grid hide">
     <div class="card">
       <h2>Resumo rápido</h2>
@@ -756,7 +766,7 @@
     </div>
   </section>
 
-  <section id="tab-estoque" class="grid cols2 hide">
+  <section id="tab-estoque" class="grid cols2 hide"><div id="stockRecovery" class="infoBox hide" role="status"></div><details class="card"><summary>Conferir estoque por código e tamanho</summary><p class="small muted">Cada código é uma variante. O resumo por modelo soma códigos diferentes.</p><div class="table-wrap"><table><thead><tr><th>Código</th><th>Produto</th><th>Cor</th><th>Tamanho</th><th>Estoque</th></tr></thead><tbody id="stockVariants"></tbody></table></div></details>
     <div class="card">
       <h2>Entrada de estoque (balanço)</h2>
       <div class="warnBox small" style="margin-bottom:10px">
@@ -1539,16 +1549,18 @@
     </div>
   </section>
 
-  <section id="tab-financeiro" class="hide">
+  <section id="tab-financeiro" class="hide"><div id="accountsRecovery" class="infoBox hide" role="status"></div><p class="small muted">Vendas e contas avulsas têm origens separadas. Não registre a mesma receita nos dois módulos. Dashboard: data do recebimento; relatório de vendas: data da venda, horário de Brasília.</p><div id="financeChartsNote" class="infoBox hide">Gráficos indisponíveis. As tabelas e totais continuam acessíveis.</div>
     <div>
       
       <div class="card">
         <h2>Dashboard Financeiro - Visão Geral</h2>
         
+        <p class="small muted">Totais por origem, mês do recebimento em Brasília. Contas avulsas e vendas não são somadas sem conciliação; podem representar o mesmo dinheiro.</p>
         <div class="row cols3">
+          <div class="infoBox"><div>Vendas · recebido líquido</div><strong id="fin_dashVendas" style="font-size:28px">R$ 0,00</strong></div>
           <div>
             <div style="background:#f0fdf4;border:1.5px solid #86efac;border-radius:12px;padding:16px">
-              <div style="color:#16a34a;font-size:12px;font-weight:600;text-transform:uppercase;margin-bottom:8px">Entradas do Mês</div>
+              <div style="color:#16a34a;font-size:12px;font-weight:600;text-transform:uppercase;margin-bottom:8px">Contas avulsas · recebido</div>
               <div id="fin_dashEntradas" style="font-size:28px;font-weight:700;color:#15803d">R$ 0,00</div>
             </div>
           </div>
@@ -1560,7 +1572,7 @@
           </div>
           <div>
             <div id="fin_dashSaldoBox" style="background:#eff6ff;border:1.5px solid #93c5fd;border-radius:12px;padding:16px">
-              <div style="color:#2563eb;font-size:12px;font-weight:600;text-transform:uppercase;margin-bottom:8px">Saldo do Mês</div>
+              <div style="color:#2563eb;font-size:12px;font-weight:600;text-transform:uppercase;margin-bottom:8px">Saldo · contas avulsas</div>
               <div id="fin_dashSaldo" style="font-size:28px;font-weight:700;color:#1d4ed8">R$ 0,00</div>
             </div>
           </div>
@@ -1574,7 +1586,7 @@
             <canvas id="chartCategorias" style="max-height:280px"></canvas>
           </div>
           <div class="card" style="background:#fafbfc">
-            <h3 style="font-size:14px;font-weight:600;margin:0 0 16px">Evolução Mensal (6 meses)</h3>
+            <h3 style="font-size:14px;font-weight:600;margin:0 0 16px">Contas avulsas · evolução (6 meses)</h3>
             <canvas id="chartEvolucao" style="max-height:280px"></canvas>
           </div>
         </div>
@@ -1958,7 +1970,7 @@
 </main>
 </div>
 
-<div id="toast" class="toast hide"></div>
+<div id="toast" class="toast hide" role="status" aria-live="polite"></div>
 
 <div id="modalGrade" class="modal hide">
   <div class="modalBox">
@@ -2341,6 +2353,15 @@
 <script src="cart-draft-store.js"></script>
 <script src="cart-draft-ui.js"></script>
 <script src="cart-draft-app.js"></script>
+<script src="modules/operation-journal.js"></script>
+<script src="modules/accounts-domain.js"></script>
+<script src="modules/accounts-repository.js"></script>
+<script src="modules/stock-domain.js"></script>
+<script src="modules/stock-repository.js"></script>
+<script src="modules/reporting-domain.js"></script>
+<script src="modules/customer-orders.js"></script>
+<script src="modules/business-ui.js"></script>
+
 <script>
   /* =========================
      LOGIN (nome + PIN sobre Supabase Auth)
@@ -2447,10 +2468,12 @@
     document.getElementById("btnMobileMenu").classList.remove("hide");
     const badge = document.getElementById("currentUserBadge");
     if(currentProfile) badge.textContent = currentProfile.display_name + (currentProfile.is_admin ? " (ADM)" : "");
-    initApp();
+    initApp().catch(error => { setDataIssue("inicialização", error); toast("Carga incompleta", "Confira o aviso de atualização antes de operar."); });
   }
 
   document.getElementById("btnLogout").addEventListener("click", async ()=>{
+    customerOrdersController?.dispose();
+    customerOrdersController=null; businessControllers.clear();
     await sb.auth.signOut();
     location.reload();
   });
@@ -2463,7 +2486,9 @@
     }
     const { data: profile, error } = await sb.from("profiles").select("id,display_name,login_email,is_admin,is_vendedora,vendedor_id").eq("id", data.session.user.id).single();
     if(error || !profile){
-      await sb.auth.signOut();
+      customerOrdersController?.dispose();
+    customerOrdersController=null; businessControllers.clear();
+    await sb.auth.signOut();
       renderLoginNames();
       return;
     }
@@ -2788,7 +2813,7 @@
      Todo o resto do app (render, busca por barcode, PDV) continua lendo
      db.products normalmente — só a carga inicial e as mutações mudam.
   ========================= */
-  async function loadProductsFromSupabase(){
+  async function loadProductsFromSupabase(strict=false){
     // embed de colors(nome) pelo color_id — mesmo padrão de sale_items(*)
     // em loadSalesFromSupabase, só que aqui é um embed pra FK simples, não
     // pra tabela filha.
@@ -2802,9 +2827,12 @@
       () => sb.from("products").select("*, colors(nome)").order("created_at", { ascending:false }).order("barcode", { ascending:true })
     );
     if(error){
+      setDataIssue("produtos", error);
       toast("Erro ao carregar produtos", error.message);
+      if(strict) throw Error(error.message);
       return;
     }
+    setDataIssue("produtos", null);
     // price_atacado/price_varejo/color_id são snake_case ou precisam de
     // achatamento do embed — mapeados aqui pro camelCase que o resto do
     // app usa (o resto das colunas de products coincide 1:1, por isso não
@@ -2916,68 +2944,33 @@
      que o resto do app (renderStock) já espera, pra não precisar
      reescrever o render.
   ========================= */
-  async function loadStockMovesFromSupabase(){
-    const { data, error } = await sb.from("stock_moves").select("*").order("moved_at", { ascending:false }).limit(200);
+  async function loadStockMovesFromSupabase(strict=false){
+    const { data, error } = await fetchAllRows(() => sb.from("stock_moves").select("*").order("moved_at", { ascending:false }).order("id"));
     if(error){
+      setDataIssue("estoque", error);
       toast("Erro ao carregar estoque", error.message);
+      if(strict) throw Error(error.message);
       return;
     }
+    setDataIssue("estoque", null);
     db.stockMoves = data.map(m=>({
       id: m.id, date: m.moved_at, type: m.type, barcode: m.barcode,
       productId: m.product_id, qty: m.qty, stockAfter: m.stock_after, note: m.note
     }));
   }
 
-  // Usado pelas duas telas de entrada de estoque (bipar e busca manual) e,
-  // com type="DEVOLUCAO", por deleteSale() ao excluir uma venda.
+  // All stock entry writes go through a single idempotent server transaction.
   async function applyStockEntry(p, qty, newCostRaw, note, type="ENTRADA"){
-    qty = toNum(qty);
-    const newCost = newCostRaw === "" ? null : Math.max(0, toNum(newCostRaw));
-
-    const { data: rpcData, error: rpcErr } = await sb.rpc("apply_stock_entry", {
-      p_product_id: p.id,
-      p_qty: qty,
-      p_type: type,
-      p_note: note || null,
-      p_new_cost: newCost
-    });
-    if(!rpcErr && rpcData){
-      const prod = rpcData.product || {};
-      const move = rpcData.move || {};
-      p.stock = toNum(prod.stock);
-      if(prod.cost != null) p.cost = toNum(prod.cost);
-      if(prod.barcode) p.barcode = prod.barcode;
-      db.stockMoves.unshift({
-        id: move.id, date: move.moved_at, type: move.type, barcode: move.barcode,
-        productId: move.product_id, qty: move.qty, stockAfter: move.stock_after, note: move.note
-      });
-      return { ok:true };
-    }
-    if(rpcErr && !isMissingRpc(rpcErr)) return { error: rpcErr.message };
-
-    // Fallback sem a RPC: optimistic lock (grava só se o stock ainda for o lido).
-    // Duas entradas simultâneas no mesmo SKU não se pisam.
-    for(let tentativa = 0; tentativa < 8; tentativa++){
-      const { data: fresh, error: readErr } = await sb.from("products").select("stock, cost, barcode").eq("id", p.id).single();
-      if(readErr) return { error: readErr.message };
-      const patch = { stock: Math.max(0, toNum(fresh.stock) + qty) };
-      if(newCost != null) patch.cost = newCost;
-      const { data: updated, error: updErr } = await sb.from("products")
-        .update(patch).eq("id", p.id).eq("stock", fresh.stock).select().maybeSingle();
-      if(updErr) return { error: updErr.message };
-      if(!updated) continue;
-      Object.assign(p, updated);
-      const { data: move, error: movErr } = await sb.from("stock_moves").insert({
-        type, barcode: p.barcode, product_id: p.id, qty, stock_after: p.stock, note
-      }).select().single();
-      if(movErr) return { error: movErr.message };
-      db.stockMoves.unshift({
-        id: move.id, date: move.moved_at, type: move.type, barcode: move.barcode,
-        productId: move.product_id, qty: move.qty, stockAfter: move.stock_after, note: move.note
-      });
-      return { ok:true };
-    }
-    return { error: "Estoque ocupado por outra operação. Tente de novo." };
+    try {
+      const controller = await businessController('stock');
+      const result = await controller.submit({productId:p.id,qty:Number(qty),type,note:note||null,newCost:newCostRaw===""?null:Number(newCostRaw)});
+      if(!result.ok) throw Error(String(result.error?.message||result.error||'Envio pendente. Confira a operação guardada.'));
+      await finishBusinessOperation('stock',controller,result);
+      const fresh=db.products.find(row=>row.id===p.id);
+      if(fresh) Object.assign(p,fresh);
+      return {ok:true};
+    }catch(error){return {error:error.message};}
+    finally { await renderOperationRecovery('stock'); }
   }
 
   /* =========================
@@ -3029,9 +3022,11 @@
       200
     );
     if(error){
+      setDataIssue("vendas", error);
       toast("Erro ao carregar vendas", error.message);
       return;
     }
+    setDataIssue("vendas", null);
     db.sales = data.map(mapSaleFromDb);
   }
 
@@ -3043,9 +3038,11 @@
       () => sb.from("clients").select("*").order("created_at", { ascending:false }).order("id")
     );
     if(error){
+      setDataIssue("clientes", error);
       toast("Erro ao carregar clientes", error.message);
       return;
     }
+    setDataIssue("clientes", null);
     db.clients = data.map(c=>({
       id: c.id, name: c.name, phone: c.phone, cnpj: c.cnpj, cpf: c.cpf,
       city: c.city, note: c.note, trocaCount: c.troca_count
@@ -3088,9 +3085,11 @@
       () => sb.from("categorias").select("*").order("nome").order("id")
     );
     if(error){
+      setDataIssue("categorias", error);
       toast("Erro ao carregar categorias", error.message);
       return;
     }
+    setDataIssue("categorias", null);
     db.categorias = data;
   }
 
@@ -3101,30 +3100,38 @@
       categoriaId: row.categoria_id, categoriaNome: row.categoria_nome,
       recorrencia: row.recorrencia, parcelas: row.parcelas, parcelaAtual: row.parcela_atual,
       dataInicio: row.data_inicio, clienteId: row.cliente_id, clienteNome: row.cliente_nome,
-      formaRecebimento: row.forma_recebimento
+      formaRecebimento: row.forma_recebimento,
+      operationRevision: row.operation_revision, archivedAt: row.archived_at
     };
   }
 
-  async function loadContasFromSupabase(){
+  async function loadContasFromSupabase(strict=false){
     const { data, error } = await fetchAllRows(
       () => sb.from("v_contas").select("*").order("proximo_vencimento").order("id")
     );
     if(error){
+      setDataIssue("contas", error);
       toast("Erro ao carregar contas", error.message);
+      if(strict) throw Error(error.message);
       return;
     }
+    setDataIssue("contas", null);
     db.contas = data.map(mapContaFromDb);
   }
 
-  async function loadMovimentacoesFromSupabase(){
-    const { data, error } = await sb.from("movimentacoes").select("*").order("data_pagamento", { ascending:false }).limit(300);
+  async function loadMovimentacoesFromSupabase(strict=false){
+    const { data, error } = await fetchAllRows(() => sb.from("movimentacoes").select("*").order("data_pagamento", { ascending:false }).order("id"));
     if(error){
+      setDataIssue("movimentações", error);
       toast("Erro ao carregar movimentações", error.message);
+      if(strict) throw Error(error.message);
       return;
     }
+    setDataIssue("movimentações", null);
     db.movimentacoes = data.map(m=>({
       id: m.id, contaId: m.conta_id, tipo: m.tipo, descricao: m.descricao,
-      valor: m.valor, data: m.data, dataPagamento: m.data_pagamento, pago: m.pago
+      valor: m.valor, data: m.data, dataPagamento: m.data_pagamento, pago: m.pago,
+      reversedAt: m.reversed_at, operationRequestId: m.operation_request_id, reversalReason: m.reversal_reason
     }));
   }
 
@@ -3492,13 +3499,16 @@
   document.getElementById("sidebarOverlay").addEventListener("click", closeMobileMenu);
 
   function setTab(t){
+    closeSaleDrawer();
+    closeMobileMenu();
     document.querySelectorAll("nav button").forEach(b=>b.classList.toggle("active", b.dataset.tab===t));
     tabs.forEach(x=> document.getElementById("tab-"+x).classList.toggle("hide", x!==t) );
 
     if(t==="home") renderHome();
     if(t==="produtos"){ selectedProductIds.clear(); renderProducts(); }
     if(t==="clientes"){ 
-      selectedClientId=null; 
+      selectedClientId=null;
+      customerOrdersController?.selectClient(null);
       editingClientId=null;
       document.getElementById("btnAddClient").textContent = "Salvar cliente";
       document.getElementById("btnEditClient").disabled = true;
@@ -4332,42 +4342,16 @@
   }
 
   function renderClientHistory(){
-    const c = db.clients.find(x=>x.id===selectedClientId);
-    if(!c){ document.getElementById("clientHistory").textContent="Selecione um cliente para ver as compras."; return; }
-
-    const sales = db.sales.filter(s=>s.clientId===c.id).slice(0,15);
-    const trocaCount = toNum(c.trocaCount||0);
-
-    let html = `<div class="small"><b>Trocas usadas:</b> ${trocaCount}</div>`;
-    html += `<div class="sep"></div>`;
-
-    if(!sales.length){
-      html += "Sem compras registradas.";
-      document.getElementById("clientHistory").innerHTML = html;
-      return;
-    }
-
-    html += sales.map(s=>{
-      const inst = s.installments ? (s.installments + "x") : "";
-      const tag = `${s.channel || "Loja"} | ${s.kind || "Venda"} | ${s.pay}${inst?(" "+inst):""}`;
-      return `<div class="small"><b>${new Date(s.date).toLocaleString("pt-BR")}</b>, ${escapeHtml(tag)}, bruto ${fmtBRL(s.totalBruto)}, líquido ${fmtBRL(s.netReceived||0)}</div>`;
-    }).join("");
-
-    document.getElementById("clientHistory").innerHTML = html;
+    const controller=getCustomerOrdersController();
+    if(controller.getState().clientId!==selectedClientId) controller.selectClient(selectedClientId);
   }
 
   /* =========================
      FINANCEIRO
   ========================= */
   
-  // Inicializar categorias padrão se não existirem
-  async function initCategoriasFinanceiro(){
-    if(!db.categorias || db.categorias.length === 0){
-      const { data, error } = await sb.from("categorias").insert(DEFAULT_CATEGORIAS).select();
-      if(error) return toast("Erro ao criar categorias padrão", error.message);
-      db.categorias = data;
-    }
-  }
+  // Rendering is read-only. Categories are created only by the explicit form.
+  function initCategoriasFinanceiro(){ return Promise.resolve(); }
 
   // Funções auxiliares de data
   function addDays(date, days){
@@ -4478,43 +4462,16 @@
     if(valor <= 0) return toast("Valor inválido","Informe um valor maior que zero.");
     if(!vencimento) return toast("Faltou vencimento","Selecione a data de vencimento.");
 
-    const categoria = db.categorias.find(c => c.id === categoriaId);
     const btn = document.getElementById("btnSalvarPagar");
-    btn.disabled = true;
-
-    if(editId){
-      // Editar conta existente
-      const { data, error } = await sb.from("contas").update({
-        descricao, categoria_id: categoriaId, valor, proximo_vencimento: vencimento, obs
-      }).eq("id", editId).select().single();
-      btn.disabled = false;
-      if(error) return toast("Falhou", error.message);
-
-      const conta = db.contas.find(c => c.id === editId);
-      if(conta) Object.assign(conta, mapContaFromDb({ ...data, categoria_nome: categoria?categoria.nome:"" }));
-      toast("Atualizado!","Conta a pagar atualizada.");
-    } else {
-      const { data, error } = await sb.rpc("create_conta", {
-        p_client_request_id: crypto.randomUUID(),
-        p_tipo: "pagar",
-        p_descricao: descricao,
-        p_valor: valor,
-        p_proximo_vencimento: vencimento,
-        p_obs: obs,
-        p_categoria_id: categoriaId,
-        p_recorrencia: recorrencia,
-        p_parcelas: parcelas,
-        p_data_inicio: vencimento
-      });
-      btn.disabled = false;
-      if(error) return toast("Falhou", error.message);
-
-      db.contas.push(mapContaFromDb({ ...data, categoria_nome: categoria?categoria.nome:"" }));
-      toast("Sucesso!",`Conta criada${recorrencia !== "unica" ? ` com ${parcelas} parcelas` : ""}.`);
-    }
-
-    document.getElementById("modalContaPagar").style.display = "none";
-    renderFinanceiro();
+    btn.disabled=true;
+    try {
+      const conta=db.contas.find(c=>c.id===editId);
+      const values={descricao,categoria_id:categoriaId,valor,proximo_vencimento:vencimento,obs};
+      const ok=editId
+        ? await executeAccountOperation('edit_account',{p_account_id:editId,p_expected_revision:conta?.operationRevision,p_changes:values})
+        : await executeAccountOperation('create_account_v2',{p_values:{...values,tipo:'pagar',recorrencia,parcelas,data_inicio:vencimento}});
+      if(ok) document.getElementById("modalContaPagar").style.display="none";
+    } finally {btn.disabled=false;}
   });
 
   function renderContasPagar(){
@@ -4522,7 +4479,7 @@
     const catFiltro = document.getElementById("fin_filtroPagarCategoria").value;
     const busca = document.getElementById("fin_buscaPagar").value.trim().toLowerCase();
 
-    let contas = db.contas.filter(c => c.tipo === "pagar");
+    let contas = db.contas.filter(c => !c.archivedAt && c.tipo === "pagar");
 
     if(statusFiltro){
       contas = contas.filter(c => {
@@ -4560,50 +4517,16 @@
           <td><span class="pill" style="background:${statusColor};color:#fff">${statusText}</span></td>
           <td>${recText}</td>
           <td class="right">
-            ${c.status === "ativo" ? `<button class="btn action success" onclick="pagarConta('${c.id}')">✓ Pagar</button>` : `<button class="btn action" onclick="cancelarPagamento('${c.id}', 'pagar')" style="color:#f59e0b">↺ Reabrir</button>`}
+            ${c.status === "ativo" ? `<button class="btn action success" onclick="pagarConta('${c.id}')">✓ Pagar</button>` : `<span class="small muted">Reversão no histórico</span>`}
             <button class="btn action" onclick="editarContaPagar('${c.id}')">Editar</button>
-            <button class="btn action danger" onclick="excluirConta('${c.id}')">× Excluir</button>
+            <button class="btn action danger" onclick="excluirConta('${c.id}')">Arquivar</button>
           </td>
         </tr>
       `;
     }).join("");
   }
 
-  window.pagarConta = async function(id){
-    const conta = db.contas.find(c => c.id === id);
-    if(!conta) return;
-
-    const hoje = hojeISOLocal();
-    const { data: mov, error: movErr } = await sb.from("movimentacoes").insert({
-      conta_id: id, tipo: "pagar",
-      descricao: `${conta.descricao} - Parcela ${conta.parcelaAtual}/${conta.parcelas}`,
-      valor: conta.valor, data: hoje, data_pagamento: hoje, pago: true
-    }).select().single();
-    if(movErr) return toast("Falhou", movErr.message);
-
-    const patch = {};
-    if(conta.recorrencia === "unica" || conta.parcelaAtual >= conta.parcelas){
-      patch.status = "concluido";
-    } else {
-      patch.parcela_atual = conta.parcelaAtual + 1;
-      if(conta.recorrencia === "semanal"){
-        patch.proximo_vencimento = addDiasDataSo(conta.proximoVencimento, 7);
-      } else if(conta.recorrencia === "mensal"){
-        patch.proximo_vencimento = addMesesDataSo(conta.proximoVencimento, 1);
-      }
-    }
-
-    const { error: contaErr } = await sb.from("contas").update(patch).eq("id", id);
-    if(contaErr) return toast("Falhou", contaErr.message);
-
-    db.movimentacoes.unshift({ id: mov.id, contaId: mov.conta_id, tipo: mov.tipo, descricao: mov.descricao, valor: mov.valor, data: mov.data, dataPagamento: mov.data_pagamento, pago: mov.pago });
-    if(patch.status) conta.status = patch.status;
-    if(patch.parcela_atual) conta.parcelaAtual = patch.parcela_atual;
-    if(patch.proximo_vencimento) conta.proximoVencimento = patch.proximo_vencimento;
-
-    toast("Pago!","Pagamento registrado.");
-    renderFinanceiro();
-  };
+  window.pagarConta = settleAccountFromUI;
 
   window.editarContaPagar = function(id){
     const conta = db.contas.find(c => c.id === id);
@@ -4617,6 +4540,7 @@
     document.getElementById("pagarVencimento").value = conta.proximoVencimento;
     document.getElementById("pagarObs").value = conta.obs || "";
     document.getElementById("pagarRecorrencia").value = conta.recorrencia;
+    document.getElementById("divPagarParcelas").style.display = conta.recorrencia !== "unica" ? "block" : "none";
     
     if(conta.recorrencia !== "unica"){
       document.getElementById("divPagarParcelas").style.display = "block";
@@ -4626,37 +4550,8 @@
     document.getElementById("modalContaPagar").style.display = "flex";
   };
 
-  window.excluirConta = async function(id){
-    if(!confirm("Excluir esta conta?")) return;
-    // movimentacoes tem ON DELETE CASCADE a partir de contas, mas o cache
-    // local precisa ser limpo manualmente do mesmo jeito.
-    const { error } = await sb.from("contas").delete().eq("id", id);
-    if(error) return toast("Falhou", error.message);
-    db.contas = db.contas.filter(c => c.id !== id);
-    db.movimentacoes = db.movimentacoes.filter(m => m.contaId !== id);
-    toast("Excluído","Conta removida.");
-    renderFinanceiro();
-  };
-
-  window.cancelarPagamento = async function(id, tipo){
-    const tipoTexto = tipo === "pagar" ? "pagamento" : "recebimento";
-    if(!confirm(`Reabrir esta conta? O ${tipoTexto} será cancelado e a conta voltará como pendente.`)) return;
-
-    const conta = db.contas.find(c => c.id === id);
-    if(!conta) return;
-
-    const { error: contaErr } = await sb.from("contas").update({ status: "ativo" }).eq("id", id);
-    if(contaErr) return toast("Falhou", contaErr.message);
-
-    const { error: movErr } = await sb.from("movimentacoes").delete().eq("conta_id", id);
-    if(movErr) return toast("Falhou", movErr.message);
-
-    conta.status = "ativo";
-    db.movimentacoes = db.movimentacoes.filter(m => m.contaId !== id);
-
-    toast("Reaberto!", "Conta voltou como pendente.");
-    renderFinanceiro();
-  };
+  window.excluirConta = archiveAccountFromUI;
+  window.cancelarPagamento = reverseAccountFromUI;
 
   document.getElementById("fin_filtroPagarStatus").addEventListener("change", renderContasPagar);
   document.getElementById("fin_filtroPagarCategoria").addEventListener("change", renderContasPagar);
@@ -4679,14 +4574,7 @@
     document.getElementById("receberCliente").value = "";
     document.getElementById("receberForma").value = "PIX";
     
-    // Preencher clientes
-    const clientesHtml = '<option value="">Nenhum</option>' + db.clients.map(c => 
-      `<option value="${escapeHtml(c.id)}">${escapeHtml(c.name)}</option>`
-    ).join("");
-    document.getElementById("receberCliente").innerHTML = clientesHtml;
-    document.getElementById("fin_filtroReceberCliente").innerHTML = '<option value="">Todos</option>' + db.clients.map(c => 
-      `<option value="${escapeHtml(c.id)}">${escapeHtml(c.name)}</option>`
-    ).join("");
+    populateReceivableClients('');
 
     document.getElementById("modalContaReceber").style.display = "flex";
   });
@@ -4708,41 +4596,16 @@
     if(valor <= 0) return toast("Valor inválido","Informe um valor maior que zero.");
     if(!vencimento) return toast("Faltou vencimento","Selecione a data de vencimento.");
 
-    const cliente = clienteId ? db.clients.find(c => c.id === clienteId) : null;
-    const btn = document.getElementById("btnSalvarReceber");
-    btn.disabled = true;
-
-    if(editId){
-      const { data, error } = await sb.from("contas").update({
-        descricao, cliente_id: clienteId || null, valor,
-        proximo_vencimento: vencimento, forma_recebimento: forma, obs
-      }).eq("id", editId).select().single();
-      btn.disabled = false;
-      if(error) return toast("Falhou", error.message);
-
-      const conta = db.contas.find(c => c.id === editId);
-      if(conta) Object.assign(conta, mapContaFromDb({ ...data, cliente_nome: cliente?cliente.name:"" }));
-      toast("Atualizado!","Conta a receber atualizada.");
-    } else {
-      const { data, error } = await sb.rpc("create_conta", {
-        p_client_request_id: crypto.randomUUID(),
-        p_tipo: "receber",
-        p_descricao: descricao,
-        p_valor: valor,
-        p_proximo_vencimento: vencimento,
-        p_obs: obs,
-        p_cliente_id: clienteId || null,
-        p_forma_recebimento: forma
-      });
-      btn.disabled = false;
-      if(error) return toast("Falhou", error.message);
-
-      db.contas.push(mapContaFromDb({ ...data, cliente_nome: cliente?cliente.name:"" }));
-      toast("Sucesso!","Conta a receber criada.");
-    }
-
-    document.getElementById("modalContaReceber").style.display = "none";
-    renderFinanceiro();
+    const btn=document.getElementById("btnSalvarReceber");
+    btn.disabled=true;
+    try {
+      const conta=db.contas.find(c=>c.id===editId);
+      const values={descricao,cliente_id:clienteId||null,valor,proximo_vencimento:vencimento,forma_recebimento:forma,obs};
+      const ok=editId
+        ? await executeAccountOperation('edit_account',{p_account_id:editId,p_expected_revision:conta?.operationRevision,p_changes:values})
+        : await executeAccountOperation('create_account_v2',{p_values:{...values,tipo:'receber'}});
+      if(ok) document.getElementById("modalContaReceber").style.display="none";
+    } finally {btn.disabled=false;}
   });
 
   function renderContasReceber(){
@@ -4750,7 +4613,7 @@
     const clienteFiltro = document.getElementById("fin_filtroReceberCliente").value;
     const busca = document.getElementById("fin_buscaReceber").value.trim().toLowerCase();
 
-    let contas = db.contas.filter(c => c.tipo === "receber");
+    let contas = db.contas.filter(c => !c.archivedAt && c.tipo === "receber");
 
     if(statusFiltro){
       contas = contas.filter(c => {
@@ -4786,9 +4649,9 @@
           <td>${fmtDataSo(c.proximoVencimento)}</td>
           <td><span class="pill" style="background:${statusColor};color:#fff">${statusText}</span></td>
           <td class="right">
-            ${c.status === "ativo" ? `<button class="btn action success" onclick="receberConta('${c.id}')">✓ Receber</button>` : `<button class="btn action" onclick="cancelarPagamento('${c.id}', 'receber')" style="color:#f59e0b">↺ Reabrir</button>`}
+            ${c.status === "ativo" ? `<button class="btn action success" onclick="receberConta('${c.id}')">✓ Receber</button>` : `<span class="small muted">Reversão no histórico</span>`}
             <button class="btn action" onclick="editarContaReceber('${c.id}')">Editar</button>
-            <button class="btn action danger" onclick="excluirConta('${c.id}')">× Excluir</button>
+            <button class="btn action danger" onclick="excluirConta('${c.id}')">Arquivar</button>
           </td>
         </tr>
       `;
@@ -4904,26 +4767,7 @@
   document.getElementById("fin_fluxoTipo").addEventListener("change", renderFluxoCaixa);
   document.getElementById("fin_fluxoStatus").addEventListener("change", renderFluxoCaixa);
 
-  window.receberConta = async function(id){
-    const conta = db.contas.find(c => c.id === id);
-    if(!conta) return;
-
-    const hoje = hojeISOLocal();
-    const { data: mov, error: movErr } = await sb.from("movimentacoes").insert({
-      conta_id: id, tipo: "receber", descricao: conta.descricao,
-      valor: conta.valor, data: hoje, data_pagamento: hoje, pago: true
-    }).select().single();
-    if(movErr) return toast("Falhou", movErr.message);
-
-    const { error: contaErr } = await sb.from("contas").update({ status: "concluido" }).eq("id", id);
-    if(contaErr) return toast("Falhou", contaErr.message);
-
-    db.movimentacoes.unshift({ id: mov.id, contaId: mov.conta_id, tipo: mov.tipo, descricao: mov.descricao, valor: mov.valor, data: mov.data, dataPagamento: mov.data_pagamento, pago: mov.pago });
-    conta.status = "concluido";
-
-    toast("Recebido!","Recebimento registrado.");
-    renderFinanceiro();
-  };
+  window.receberConta = settleAccountFromUI;
 
   window.editarContaReceber = function(id){
     const conta = db.contas.find(c => c.id === id);
@@ -4932,7 +4776,7 @@
     document.getElementById("modalReceberTitulo").textContent = "Editar Conta a Receber";
     document.getElementById("editReceberId").value = conta.id;
     document.getElementById("receberDescricao").value = conta.descricao;
-    document.getElementById("receberCliente").value = conta.clienteId || "";
+    populateReceivableClients(conta.clienteId || "");
     document.getElementById("receberValor").value = conta.valor;
     document.getElementById("receberVencimento").value = conta.proximoVencimento;
     document.getElementById("receberForma").value = conta.formaRecebimento || "PIX";
@@ -4948,9 +4792,10 @@
   // HISTÓRICO DE PAGAMENTOS
   function popularMesesHistorico(){
     const select = document.getElementById("fin_historicoMes");
+    const current=select.value;
     const opcoes = [];
-    
-    for(let ano = 2026; ano <= 2030; ano++){
+    const years=[...db.movimentacoes.map(m=>(m.dataPagamento||m.data||'')),...db.sales.flatMap(s=>(s.payments||[]).map(p=>p.date||'')),String(new Date().getFullYear())].map(d=>/^\d{4}/.test(d)?Number(d.slice(0,4)):NaN).filter(y=>Number.isInteger(y)&&y>0);
+    for(let ano=Math.min(...years);ano<=Math.max(...years);ano++){
       for(let mes = 0; mes <= 11; mes++){
         const mesNome = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'][mes];
         opcoes.push(`<option value="${ano}-${String(mes+1).padStart(2,'0')}">${mesNome} ${ano}</option>`);
@@ -4958,6 +4803,7 @@
     }
     
     select.innerHTML = '<option value="">Todos os meses</option>' + opcoes.join("");
+    if([...select.options].some(o=>o.value===current)) select.value=current;
   }
 
   function renderHistorico(){
@@ -4965,26 +4811,20 @@
     const tipoFiltro = document.getElementById("fin_historicoTipo").value;
     const busca = document.getElementById("fin_historicoBusca").value.trim().toLowerCase();
 
-    // Buscar contas concluídas E movimentações pagas
-    let historico = [];
-    
-    // Adicionar contas que foram concluídas
-    db.contas.filter(c => c.status === "concluido").forEach(c => {
-      // Buscar movimentação relacionada
-      const mov = db.movimentacoes.filter(m => m.contaId === c.id).sort((a,b) => String(b.dataPagamento||"").localeCompare(String(a.dataPagamento||"")))[0];
-      if(mov){
-        historico.push({
-          id: c.id,
-          tipo: c.tipo,
-          descricao: c.descricao,
-          valor: c.valor,
-          dataPagamento: mov.dataPagamento,
-          categoriaNome: c.categoriaNome,
-          clienteNome: c.clienteNome
-        });
-      }
+    // Every movement is a separate historical fact, including active installments.
+    let historico=db.movimentacoes.map(m=>{
+      const conta=db.contas.find(c=>c.id===m.contaId);
+      return {id:m.contaId,movementId:m.id,tipo:m.tipo,descricao:m.descricao||conta?.descricao||'',
+        valor:m.valor,dataPagamento:m.dataPagamento||m.data,categoriaNome:conta?.categoriaNome,
+        clienteNome:conta?.clienteNome,reversedAt:m.reversedAt,operationRequestId:m.operationRequestId};
     });
 
+    for(const sale of db.sales){
+      const client=findClientById(sale.clientId);
+      for(const payment of sale.payments||[]) historico.push({id:sale.id,saleId:sale.id,
+        tipo:'receber',descricao:'Venda · '+(client?.name||'Cliente não informado')+' · '+payment.method,
+        valor:payment.value,dataPagamento:payment.date,clienteNome:client?.name||'',source:'sale'});
+    }
     // Filtrar
     if(mesFiltro){
       historico = historico.filter(h => h.dataPagamento && h.dataPagamento.substring(0, 7) === mesFiltro);
@@ -5002,7 +4842,7 @@
     }
 
     tb.innerHTML = historico.map(h => {
-      const tipoText = h.tipo === "pagar" ? "Pago" : "Recebido";
+      const tipoText = h.reversedAt ? "Revertido (preservado)" : (h.source==='sale'?"Venda · recebido":(h.tipo === "pagar" ? "Conta · pago" : "Conta · recebido"));
       const catCliente = h.tipo === "pagar" ? h.categoriaNome : (h.clienteNome || "-");
 
       return `
@@ -5013,7 +4853,7 @@
           <td class="small">${escapeHtml(catCliente)}</td>
           <td class="right" style="font-weight:600;color:${h.tipo === 'pagar' ? '#ef4444' : '#10b981'}">${fmtBRL(h.valor)}</td>
           <td class="right">
-            <button class="btn action" onclick="cancelarPagamento('${h.id}', '${h.tipo}')" style="color:#f59e0b">↺ Cancelar</button>
+            ${h.saleId ? `<button class="btn action" onclick="openSaleDrawer('${h.saleId}')">Ver venda</button>` : !h.reversedAt && h.operationRequestId ? `<button class="btn action" onclick="cancelarPagamento('${h.id}', '${h.movementId}')">Reverter este movimento</button>` : '<span class="small muted">Histórico preservado</span>'}
           </td>
         </tr>
       `;
@@ -5050,19 +4890,18 @@
   }
 
   function renderDashboardFinanceiro(){
-    const hoje = new Date();
-    const mesAtual = hoje.getMonth();
-    const anoAtual = hoje.getFullYear();
+    const [anoAtual,month]=VaidosaReporting.saleDay({date:Date.now()},'America/Sao_Paulo').slice(0,7).split('-').map(Number);
+    const mesAtual=month-1;
 
     // Calcular movimentações do mês atual — comparação por string (ver
     // salesEntradasDoMes acima pro motivo de não usar new Date() aqui).
     const alvoMesAno = `${anoAtual}-${String(mesAtual + 1).padStart(2, "0")}`;
     const movMes = db.movimentacoes.filter(m => {
-      return (m.data || "").slice(0, 7) === alvoMesAno && m.pago;
+      return (m.dataPagamento || m.data || "").slice(0, 7) === alvoMesAno && m.pago && !m.reversedAt;
     });
 
-    const entradas = movMes.filter(m => m.tipo === "receber").reduce((sum, m) => sum + toNum(m.valor), 0)
-      + salesEntradasDoMes(mesAtual, anoAtual);
+    const entradas = movMes.filter(m => m.tipo === "receber").reduce((sum, m) => sum + toNum(m.valor), 0);
+    document.getElementById('fin_dashVendas').textContent=fmtBRL(salesEntradasDoMes(mesAtual,anoAtual));
     const saidas = movMes.filter(m => m.tipo === "pagar").reduce((sum, m) => sum + toNum(m.valor), 0);
     const saldo = entradas - saidas;
 
@@ -5081,6 +4920,10 @@
       saldoBox.style.borderColor = "#fca5a5";
       document.getElementById("fin_dashSaldo").style.color = "#b91c1c";
     }
+
+    const chartsNote=document.getElementById("financeChartsNote");
+    if(chartsNote) chartsNote.classList.toggle("hide",typeof Chart === "function");
+    if(typeof Chart !== "function") return;
 
     // GRÁFICO: Despesas por Categoria
     const despesasPorCategoria = {};
@@ -5144,12 +4987,11 @@
       
       const alvoMesAnoLoop = `${ano}-${String(mes + 1).padStart(2, "0")}`;
       const movDoMes = db.movimentacoes.filter(m => {
-        return (m.data || "").slice(0, 7) === alvoMesAnoLoop && m.pago;
+        return (m.dataPagamento || m.data || "").slice(0, 7) === alvoMesAnoLoop && m.pago && !m.reversedAt;
       });
       
       entradasMes.push(
         movDoMes.filter(m => m.tipo === "receber").reduce((s, m) => s + toNum(m.valor), 0)
-        + salesEntradasDoMes(mes, ano)
       );
       saidasMes.push(movDoMes.filter(m => m.tipo === "pagar").reduce((s, m) => s + toNum(m.valor), 0));
     }
@@ -5201,15 +5043,16 @@
   }
 
   async function renderFinanceiro(){
-    await initCategoriasFinanceiro();
+    populateReceivableClients();
+    renderOperationRecovery("accounts");
     renderCategorias();
     initFluxoDatas();
     popularMesesHistorico();
-    renderDashboardFinanceiro();
     renderFluxoCaixa();
     renderContasPagar();
     renderContasReceber();
     renderHistorico();
+    try { renderDashboardFinanceiro(); } catch(error) { document.getElementById("financeChartsNote").classList.remove("hide"); }
   }
 
   /* =========================
@@ -5655,7 +5498,9 @@
 
   function renderStock(){
     const tb = document.getElementById("stockMoves");
-    const list = db.stockMoves.slice(0,140);
+    renderOperationRecovery("stock");
+    renderStockVariants();
+    const list = db.stockMoves;
     tb.innerHTML = list.map(m=>{
       const p = db.products.find(x=>x.id===m.productId);
       return `
@@ -6093,10 +5938,11 @@
     const catEl = document.getElementById("st_cat");
     const colorEl = document.getElementById("st_color");
     const sizeEl = document.getElementById("st_size");
-    if(qEl) qEl.addEventListener("input", renderStockReport);
-    if(catEl) catEl.addEventListener("change", renderStockReport);
-    if(colorEl) colorEl.addEventListener("change", renderStockReport);
-    if(sizeEl) sizeEl.addEventListener("change", renderStockReport);
+    const refresh=()=>{renderStockReport();renderStockVariants();};
+    if(qEl) qEl.addEventListener("input", refresh);
+    if(catEl) catEl.addEventListener("change", refresh);
+    if(colorEl) colorEl.addEventListener("change", refresh);
+    if(sizeEl) sizeEl.addEventListener("change", refresh);
   })();
 
 
@@ -6879,10 +6725,7 @@
 
     const { error: rpcErr } = await sb.rpc("delete_sale", { p_sale_id: saleId });
     if(!rpcErr){
-      for(const it of s.items){
-        const p = db.products.find(x=>x.id===it.productId);
-        if(p) p.stock = toNum(p.stock) + toNum(it.qty);
-      }
+      await loadProductsFromSupabase();
       db.sales = db.sales.filter(x=>x.id!==saleId);
       await loadStockMovesFromSupabase();
       pushStockToNuvemshop(barcodes);
@@ -7458,17 +7301,7 @@
     const pay = document.getElementById("r_pay").value;
     const ch = document.getElementById("r_channel").value;
 
-    const [Y,M] = month.split("-").map(Number);
-    const start = new Date(Y, M-1, 1);
-    const end = new Date(Y, M, 1);
-
-    const sales = db.sales.filter(s=>{
-      const d = new Date(s.date);
-      if(d < start || d >= end) return false;
-      if(pay && s.pay !== pay) return false;
-      if(ch && (s.channel||"Loja") !== ch) return false;
-      return true;
-    });
+    const sales = VaidosaReporting.selectSalesByMonth(db.sales,{month,timeZone:'America/Sao_Paulo',pay,channel:ch});
 
     const bruto = sales.reduce((a,s)=>a+toNum(s.totalBruto),0);
     const taxas = sales.reduce((a,s)=>a+toNum(s.feeValue||0),0);
@@ -7487,22 +7320,7 @@
       <div class="box"><div class="t">Ticket médio (bruto)</div><div class="v">${fmtBRL(ticket)}</div></div>
     `;
 
-    const map = new Map();
-    for(const s of sales){
-      for(const it of s.items){
-        const key = it.productId;
-        const cur = map.get(key) || { qty:0, bruto:0, liquido:0, it };
-        cur.qty += toNum(it.qty);
-        cur.bruto += toNum(it.price)*toNum(it.qty);
-
-        const share = (toNum(s.totalBruto) > 0) ? ( (toNum(it.price)*toNum(it.qty)) / toNum(s.totalBruto) ) : 0;
-        cur.liquido += toNum(s.netReceived||0) * share;
-
-        map.set(key, cur);
-      }
-    }
-
-    const top = Array.from(map.values()).sort((a,b)=>b.qty-a.qty).slice(0,50);
+    const top = VaidosaReporting.aggregateProductSales(sales).sort((a,b)=>b.qty-a.qty).slice(0,50);
     const tb = document.getElementById("topProducts");
     tb.innerHTML = top.map(x=>{
       const p = db.products.find(pp=>pp.id===x.it.productId);
