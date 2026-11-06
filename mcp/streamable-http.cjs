@@ -89,7 +89,7 @@ function createStreamableHttpHandler({resource,issuer,allowedOrigins=[],verifyAc
    }else if(message.method==='ping')result={};
    else if(message.method==='tools/list'){
     if(Object.keys(params).some(k=>k!=='_meta'))throw new InputError();
-    const definitions=await service.listTools();
+    const definitions=await service.listTools(Object.freeze({principal,signal}));
     signal.throwIfAborted();
     if(!Array.isArray(definitions)||definitions.length>5||definitions.some(t=>!Object.hasOwn(TOOL_SCOPE,t.name)||!principal.permissions.includes(TOOL_SCOPE[t.name])))throw Error('Service contract');
     result={tools:definitions};

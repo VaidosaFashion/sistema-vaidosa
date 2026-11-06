@@ -2,6 +2,12 @@
 
 Status desta entrega: **executável local fixture, somente leitura; nenhuma integração real ativa**. Nenhum OAuth, segredo, permissão de banco, configuração de cliente, listener HTTP ou recurso externo foi criado. O [README do componente](../mcp/README.md) contém comandos e contratos executados pelos testes.
 
+Atualização de 06/11/2026: a [fronteira de negócio assíncrona](mcp-business-read-preparation.md)
+foi implementada com gateway mock e integração em memória ao handler HTTP existente.
+Isso prepara parte do item 3 abaixo; implementação/autorização do gateway real,
+verificador criptográfico, RLS efetiva e clientes reais continuam pendentes. O
+componente não ativa a conexão e não requer instalar o bundle mutante.
+
 ## Caminho de integração
 
 1. Revisar os resultados fictícios no cliente de teste local. A próxima validação com Codex/Claude deve primeiro apontar para `node <caminho-absoluto>/mcp/server.cjs --fixture`, com escopo seller por padrão. Essa descrição não grava configurações nem confirma suporte de uma versão específica do cliente.

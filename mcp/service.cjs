@@ -82,4 +82,5 @@ function createReadService({ adapter, principal, now = Date.now }) {
     }
   });
 }
-module.exports = { createReadService, InputError, ToolError, plainObject };
+module.exports = { createReadService, InputError, ToolError, plainObject,
+  readDefinitions: () => structuredClone(definitions), validateArgs, validDate };

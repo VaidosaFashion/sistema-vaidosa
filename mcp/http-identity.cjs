@@ -1,6 +1,9 @@
 'use strict';
 // Resource-server boundary only. No JWT decoding, OAuth, discovery fetch or credentials here.
 const READ_SCOPES=Object.freeze(['stock:read','sales:read','finance:read']);
+// Process-local provenance. A frozen object or a role supplied by a tool is not
+// an authenticated principal. Tokens are deliberately never retained here.
+const verified=new WeakMap();
 class AccessError extends Error {constructor(status,code,requiredScopes=['mcp:read']){super(code);this.status=status;this.code=code;this.requiredScopes=Object.freeze(requiredScopes.filter(s=>s==='mcp:read'||READ_SCOPES.includes(s)));}}
 function canonicalHttps(value){const u=new URL(value);if(u.protocol!=='https:'||u.username||u.password||u.hash||u.search||u.href!==value)throw Error('Canonical HTTPS URL required');return u;}
 function createIdentityBoundary({resource,issuer,verifyAccessToken,authorizePrincipal,now=Date.now}={}){
@@ -33,7 +36,14 @@ function createIdentityBoundary({resource,issuer,verifyAccessToken,authorizePrin
   const permissions=allowed.filter(p=>claims.scopes.includes(p));
   if(!permissions.length)throw new AccessError(403,'insufficient_scope',['mcp:read',allowed[0]]);
   if(grant.customerIds!==null&&(!Array.isArray(grant.customerIds)||grant.customerIds.length>100||grant.customerIds.some(v=>typeof v!=='string'||!/^[A-Za-z0-9:_-]{1,128}$/.test(v))))throw new AccessError(403,'access_denied');
-  return Object.freeze({id:grant.id,store:grant.store,permissions:Object.freeze(permissions),customerIds:grant.customerIds===null?null:Object.freeze([...grant.customerIds])});
+  const principal=Object.freeze({id:grant.id,store:grant.store,permissions:Object.freeze(permissions),customerIds:grant.customerIds===null?null:Object.freeze([...new Set(grant.customerIds)].sort())});
+  verified.set(principal,Object.freeze({issuer,resource,expiresAt:claims.expiresAt}));
+  return principal;
  }});
 }
-module.exports={createIdentityBoundary,AccessError,canonicalHttps,READ_SCOPES};
+function requireVerifiedPrincipal(principal,{issuer,resource,now=Date.now}={}){
+ const proof=verified.get(principal);
+ if(!proof||proof.issuer!==issuer||proof.resource!==resource||proof.expiresAt<=Math.floor(now()/1000))throw new AccessError(403,'access_denied');
+ return principal;
+}
+module.exports={createIdentityBoundary,requireVerifiedPrincipal,AccessError,canonicalHttps,READ_SCOPES};

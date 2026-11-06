@@ -4,6 +4,12 @@ Componente executável com cinco ferramentas MCP e **dados inteiramente inventad
 
 Requer Node com `node:test`, `structuredClone` e `TextDecoder` (Node 20 ou superior). Não há instalação de dependências nem alteração do `package.json`.
 
+Preparação adicional: `business-adapter.cjs` e `business-service.cjs` implementam a
+fronteira assíncrona de leitura sobre um gateway explicitamente injetado, com
+contratos UUID/DTO v2 e testes mock. Não fornecem gateway Supabase real nem nova
+flag de ativação. O executável stdio abaixo continua fixture v1. Ver
+[contrato e limites da preparação](../docs/mcp-business-read-preparation.md).
+
 ```sh
 node mcp/server.cjs --fixture
 node mcp/server.cjs --fixture --principal=manager
@@ -72,3 +78,10 @@ Referências primárias consultadas em 05/11/2026: [transporte stdio](https://mo
 O candidato preferencial para o transporte de produção é o [SDK TypeScript oficial](https://github.com/modelcontextprotocol/typescript-sdk): evita manter manualmente recursos extensos de transporte, validação e evolução do protocolo. O repositório foi apenas consultado; nenhum código/dependência foi baixado, instalado ou executado. Antes de adotá-lo: escolher release estável exata compatível com cliente/Node, verificar lockfile e dependências transitivas, avisos de segurança, política de atualização e os contratos deste módulo. O [arquivo de licença consultado](https://github.com/modelcontextprotocol/typescript-sdk/blob/main/LICENSE) descreve transição de MIT para Apache-2.0; verificar a licença e avisos do artefato versionado escolhido, não assumir que o texto de `main` cobre toda versão histórica.
 
 O transporte mínimo sem dependências foi mantido **para este protótipo isolado**, com superfície pequena e testes reproduzíveis offline. Isso transfere a manutenção de protocolo para o projeto e não deve justificar expansão artesanal para OAuth/HTTP/integrações complexas. Migrar o transporte para SDK deve preservar as ferramentas/DTOs, autorização e testes existentes, sem alterar as regras de negócio.
+
+Atualização posterior ao texto original de reutilização: o ensaio externo isolado
+`vaidosa-mcp-cliente-oficial-2026-11-05/terminal-summary.json` registra 12 testes
+aprovados (11 cenários e grupo), usando cliente/core oficiais `2.4.0` por stdio
+contra a fixture desta base. Não adicionou dependências ao aplicativo e não valida
+o adapter de negócio v2 nem clientes Codex/Claude reais. A etapa atual acrescenta
+seu próprio ensaio mock/HTTP em memória, documentado separadamente.
