@@ -1,0 +1,66 @@
+{
+  "commit": "9293412920e73c2fbba0ae8e8faa7a0ab63fb0cb",
+  "bundle_sha256": "5b3cd858ad85b0c89ed70d1c5de3bfb0f7264852fc61feca13983b28937dbb4d",
+  "files": [
+    {
+      "file": "tests/sql/bootstrap.sql",
+      "sha256": "cdedeaf5c69a1d31cc09daf486c3f963820ec2f977b61a4ad151b93488abfeb0"
+    },
+    {
+      "file": "tests/sql/observed_schema.sql",
+      "sha256": "3519ff3f4b9934e641102d74a96209c8187d1ff4c27ade30d6f1ca62fad3dbfc"
+    },
+    {
+      "file": "supabase/releases/20261104_install_sales.sql",
+      "sha256": "968ea1d4ee8ba9e7cdf3bebb0dce7faa3be87ff1c5ccba9fcac0e80d0cfcebfa"
+    },
+    {
+      "file": "supabase/releases/20261105_install_blocks.sql",
+      "sha256": "5b3cd858ad85b0c89ed70d1c5de3bfb0f7264852fc61feca13983b28937dbb4d"
+    },
+    {
+      "file": "supabase/migrations/20260803214619_core_schema.sql",
+      "sha256": "ad0a97fc99f686943bd86ad3052a90ad52d1115465b64f5fb0ee1fc2ac0bc29d"
+    },
+    {
+      "file": "supabase/migrations/20260803214620_rls_policies.sql",
+      "sha256": "dca30b8a4e706fb5fd31248a52f5a5b00868ee2e3ce3718292ecae5a1dec8f73"
+    },
+    {
+      "file": "supabase/migrations/20260803214621_rpc_functions.sql",
+      "sha256": "a3dc4dde5d25bdfa89e7804fccc2e995acb3da58114671f3632527e9831bbc6e"
+    },
+    {
+      "file": "supabase/migrations/20260804135036_add_product_fiscal_fields.sql",
+      "sha256": "9534558dfff7d8d71be95b7a724c8486070213305d23a9d77e5d11b67e8bad0a"
+    },
+    {
+      "file": "supabase/migrations/20260806142836_add_atacado_varejo_pricing.sql",
+      "sha256": "d6caf3001c156e4d980ce06ac64408a60010f92fd6302fbc6f6ee148262e8a56"
+    },
+    {
+      "file": "supabase/migrations/20260806142855_create_sale_price_tier.sql",
+      "sha256": "cc8daafb99c3302ac155c67124af2b8955290fde05a68f2fac31e9479f06b330"
+    },
+    {
+      "file": "supabase/migrations/20260806181817_add_product_color.sql",
+      "sha256": "46fc2fa1acb285fafc0b3cfe9f99ce5770287dca59fe54046f5f3e7c58156225"
+    },
+    {
+      "file": "supabase/migrations/20260807142731_add_nuvemshop_credentials.sql",
+      "sha256": "94603e77da59e20c370efa9bca99eb16e0d48f3a74dae1f615c43e4e90b5d6a5"
+    },
+    {
+      "file": "supabase/migrations/20260807145210_add_nuvemshop_product_map.sql",
+      "sha256": "7e8908c8d0a7aaef4580b2589fe4ffb0d4af87002e05624b0abe095abaa11b74"
+    },
+    {
+      "file": "supabase/migrations/20260820124800_fix_auditoria_bugs.sql",
+      "sha256": "59a1853b31db59c04dc8e324b5620654a12de18392fb3b572fabf58a2ea9865a"
+    },
+    {
+      "file": "supabase/migrations/20260820180000_taxas_cartao_configuraveis.sql",
+      "sha256": "f8242ebb72d786787c18d2e325d1c6e4f12e2ce70d03a59149ae4fdcb6808357"
+    }
+  ]
+}

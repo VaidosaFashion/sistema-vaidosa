@@ -10,6 +10,11 @@ contratos UUID/DTO v2 e testes mock. Não fornecem gateway Supabase real nem nov
 flag de ativação. O executável stdio abaixo continua fixture v1. Ver
 [contrato e limites da preparação](../docs/mcp-business-read-preparation.md).
 
+Etapa PostgreSQL: as mesmas cinco consultas foram ligadas a um banco descartável
+com RLS, papéis efêmeros e identidade simulada. O gateway é injetável; o único
+executor fornecido continua em `tests/support`, preso ao socket da fixture. Não é
+conexão ativa à loja. Ver [escopo e reprodução](../docs/mcp-postgres-fixture.md).
+
 ```sh
 node mcp/server.cjs --fixture
 node mcp/server.cjs --fixture --principal=manager

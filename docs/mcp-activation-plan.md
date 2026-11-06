@@ -8,6 +8,11 @@ Isso prepara parte do item 3 abaixo; implementação/autorização do gateway re
 verificador criptográfico, RLS efetiva e clientes reais continuam pendentes. O
 componente não ativa a conexão e não requer instalar o bundle mutante.
 
+Ensaio adicional: [PostgreSQL fictício com autorização/RLS](mcp-postgres-fixture.md)
+conecta o gateway às tabelas reconstruídas da fixture. A identidade é simulada por
+LOGIN local e verificador fictício; não substitui OAuth/JWT criptográfico, RLS real
+implantada ou configuração de clientes. A ativação futura continua pendente.
+
 ## Caminho de integração
 
 1. Revisar os resultados fictícios no cliente de teste local. A próxima validação com Codex/Claude deve primeiro apontar para `node <caminho-absoluto>/mcp/server.cjs --fixture`, com escopo seller por padrão. Essa descrição não grava configurações nem confirma suporte de uma versão específica do cliente.

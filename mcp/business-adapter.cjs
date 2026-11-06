@@ -46,7 +46,7 @@ function createBusinessReadAdapter({gateway,store,resource,issuer,timeZone,now=D
   if(query.signal?.aborted)controller.abort();const timer=setTimeout(abort,timeoutMs);
   const plan=freeze({...PLANS[kind],version:VERSION,identity:{subject:principal.id,store,customerIds:customers},filters:structuredClone(query.filters||{}),page:{limit:maxRows,continuation:query.continuation??null,snapshot:query.snapshot??null},maxResponseBytes:262144});
   let onAbort;const stopped=new Promise((_,reject)=>{onAbort=()=>reject(unavailable());if(controller.signal.aborted)onAbort();else controller.signal.addEventListener('abort',onAbort,{once:true});});
-  inFlight++;const work=Promise.resolve().then(()=>{controller.signal.throwIfAborted();return gateway.readSnapshot(plan,Object.freeze({signal:controller.signal}));}).finally(()=>{inFlight--;});
+  inFlight++;const work=Promise.resolve().then(()=>{controller.signal.throwIfAborted();return gateway.readSnapshot(plan,Object.freeze({signal:controller.signal,principal}));}).finally(()=>{inFlight--;});
   try{
    const result=await Promise.race([work,stopped]);controller.signal.throwIfAborted();authorize(principal,permission);
    plain(result,['version','subject','store','snapshot','next','complete','data']);
@@ -93,4 +93,4 @@ function createBusinessReadAdapter({gateway,store,resource,issuer,timeZone,now=D
   })
  });
 }
-module.exports={createBusinessReadAdapter,comparePosition,VERSION};
+module.exports={createBusinessReadAdapter,comparePosition,VERSION,readPlans:()=>structuredClone(PLANS)};
