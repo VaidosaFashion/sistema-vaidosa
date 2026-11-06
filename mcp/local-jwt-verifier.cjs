@@ -3,15 +3,18 @@
 // no signing, network discovery, remote JWKS, environment or credential I/O here.
 const {createHash,randomBytes}=require('node:crypto');
 const {canonicalHttps}=require('./http-identity.cjs');
+const {revocationNamespace,revocationTarget}=require('./shared-revocation-store.cjs');
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const SCOPES=['mcp:read','stock:read','sales:read','finance:read'];
 const fail=()=>{throw Error('Invalid local access token');};
 function plain(v,allowed){
  if(!v||![Object.prototype,null].includes(Object.getPrototypeOf(v))||Reflect.ownKeys(v).some(k=>typeof k!=='string'||!allowed.includes(k))||Object.values(Object.getOwnPropertyDescriptors(v)).some(x=>!Object.hasOwn(x,'value')))fail();
 }
-async function createLocalJwtVerifier({jose,issuer,resource,publicKeys,maxTokenAgeSeconds,now=Date.now}={}){
+async function createLocalJwtVerifier({jose,issuer,resource,publicKeys,maxTokenAgeSeconds,now=Date.now,checkShared}={}){
  canonicalHttps(issuer);canonicalHttps(resource);
  if(!['jwtVerify','importJWK','decodeProtectedHeader'].every(x=>typeof jose?.[x]==='function')||!Number.isSafeInteger(maxTokenAgeSeconds)||maxTokenAgeSeconds<1||maxTokenAgeSeconds>900||typeof now!=='function')throw Error('Explicit local JOSE/token policy required');
+ if(checkShared!==undefined&&typeof checkShared!=='function')throw Error('Explicit shared authorization check required');
+ const namespace=revocationNamespace(issuer,resource);
  const salt=randomBytes(32),tokens=new Map(),subjects=new Map(),revokedKeys=new Set();let state=null,update=0,disabled=false,lastSecond=-1;
  const digest=s=>createHash('sha256').update(salt).update(s).digest('hex');
  function seconds(){const n=Math.floor(now()/1000);if(!Number.isSafeInteger(n)||n<0||n<lastSecond){disabled=true;fail();}lastSecond=n;return n;}
@@ -34,6 +37,7 @@ async function createLocalJwtVerifier({jose,issuer,resource,publicKeys,maxTokenA
  }
  // This closure retains only hashes, times, public-key state and kid; never JWT.
  const currentGuard=meta=>()=>assertCurrent(meta);
+ const sharedGuard=(meta,local)=>async({signal}={})=>{local();signal?.throwIfAborted();if(await checkShared(meta,Object.freeze({signal}))!==true)fail();signal?.throwIfAborted();local();};
  await replaceKeys(publicKeys);
  return Object.freeze({
   async verifyAccessToken(token,context){
@@ -48,7 +52,9 @@ async function createLocalJwtVerifier({jose,issuer,resource,publicKeys,maxTokenA
     if(payload.iss!==issuer||payload.aud!==resource||typeof payload.sub!=='string'||!UUID.test(payload.sub)||typeof payload.jti!=='string'||!UUID.test(payload.jti)||!Number.isSafeInteger(payload.iat)||!Number.isSafeInteger(payload.exp)||payload.iat>second||payload.exp<=second||payload.exp<=payload.iat||payload.exp-payload.iat>maxTokenAgeSeconds||payload.nbf!==undefined&&(!Number.isSafeInteger(payload.nbf)||payload.nbf>second||payload.nbf<payload.iat||payload.nbf>=payload.exp)||typeof payload.scope!=='string'||payload.scope.length>128)fail();
     const scopes=payload.scope.split(' ');if(!scopes.length||new Set(scopes).size!==scopes.length||scopes.some(s=>!SCOPES.includes(s)))fail();
     const guard=currentGuard(Object.freeze({state:captured,kid:header.kid,jti:digest(payload.jti),subject:digest(payload.sub),iat:payload.iat,exp:payload.exp}));guard();
-    return Object.freeze({verified:true,issuer,audiences:Object.freeze([resource]),subject:payload.sub,expiresAt:payload.exp,...(payload.nbf===undefined?{}:{notBefore:payload.nbf}),scopes:Object.freeze(scopes),assertCurrent:guard});
+    const shared=checkShared?sharedGuard(Object.freeze({namespace,token:revocationTarget(namespace,'token',payload.jti),subject:revocationTarget(namespace,'subject',payload.sub),key:revocationTarget(namespace,'key',header.kid),iat:payload.iat,exp:payload.exp}),guard):null;
+    if(shared)await shared(context);
+    return Object.freeze({verified:true,issuer,audiences:Object.freeze([resource]),subject:payload.sub,expiresAt:payload.exp,...(payload.nbf===undefined?{}:{notBefore:payload.nbf}),scopes:Object.freeze(scopes),assertCurrent:guard,...(shared?{assertAuthorized:shared}:{})});
    }catch{fail();}
   },
   replaceKeys,

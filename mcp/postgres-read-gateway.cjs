@@ -2,7 +2,7 @@
 // Read gateway over an explicitly injected bounded PostgreSQL executor.
 // Import does not connect, read environment, create a listener or load credentials.
 const {randomBytes}=require('node:crypto');
-const {requireVerifiedPrincipal,canonicalHttps}=require('./http-identity.cjs');
+const {requireVerifiedPrincipal,requireVerifiedPrincipalAsync,canonicalHttps}=require('./http-identity.cjs');
 const {VERSION,readPlans}=require('./business-adapter.cjs');
 const PLANS=Object.values(readPlans());
 const SCOPES={stock_variants:'stock:read',customer_orders:'sales:read',sale_detail:'sales:read',sale_receipts:'finance:read',manual_accounts:'finance:read'};
@@ -22,9 +22,10 @@ function createPostgresReadGateway({sourceId,store,resource,issuer,executeRead,f
   context?.signal?.throwIfAborted();return p;
  }
  async function request(mode,plan,p,context){
+  await requireVerifiedPrincipalAsync(p,{resource,issuer,now,signal:context?.signal});
   const query=Object.freeze({mode,source:sourceId,store,subject:p.id,operation:plan.operation,customers:p.customerIds,filters:structuredClone(plan.filters),maxRows:2000,maxBytes:260000});
   const answer=await executeRead(query,Object.freeze({principal:p,signal:context?.signal}));
-  context?.signal?.throwIfAborted();requireVerifiedPrincipal(p,{resource,issuer,now});
+  context?.signal?.throwIfAborted();await requireVerifiedPrincipalAsync(p,{resource,issuer,now,signal:context?.signal});
   if(!answer||answer.source!==sourceId||answer.store!==store||answer.subject!==p.id||typeof answer.authorization!=='string'||!/^[a-f0-9]{64}$/.test(answer.authorization)||Buffer.byteLength(JSON.stringify(answer))>262144)reject();
   return answer;
  }

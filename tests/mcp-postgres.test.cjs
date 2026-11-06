@@ -29,7 +29,10 @@ async function service(n,extra={},trustedPrincipal=null){
 function plan(p,operation,filters={}){const template=Object.values(readPlans()).find(x=>x.operation===operation);return {...template,version:VERSION,identity:{subject:p.id,store:p.store,customerIds:p.customerIds},filters,page:{limit:operation==='sale_detail'?1:20,continuation:null,snapshot:null},maxResponseBytes:262144};}
 test('five MCP reads backed by isolated PostgreSQL authorization and RLS',{timeout:73000},async t=>{
  fs.mkdirSync(SOCKET,{mode:0o700});run(PG+'initdb',['-D','/scratch/cluster','--username=postgres','--encoding=UTF8','--no-locale','--auth-local=trust','--auth-host=reject','--wal-segsize=1','--no-instructions'],{db:'postgres',timeout:30000});
- const fd=fs.openSync('/scratch/postgres.log','wx',0o600);const server=cp.spawn(PG+'postgres',['-D','/scratch/cluster','-k',SOCKET,'-p','55432','-c','listen_addresses=','-c','shared_buffers=16MB','-c','dynamic_shared_memory_type=mmap','-c','max_connections=8','-c','max_worker_processes=0','-c','autovacuum=off','-c','min_wal_size=2MB','-c','max_wal_size=8MB','-c','timezone=UTC','-c','log_timezone=UTC','-c','log_statement=none','-c','log_min_error_statement=panic','-c','log_error_verbosity=terse','-c','log_min_messages=panic','-c','log_parameter_max_length_on_error=0'],{env:environment('postgres'),cwd:'/scratch',stdio:['ignore',fd,fd]});fs.closeSync(fd);
+ function launchServer(){
+ const fd=fs.openSync('/scratch/postgres.log','a',0o600);const instance=cp.spawn(PG+'postgres',['-D','/scratch/cluster','-k',SOCKET,'-p','55432','-c','listen_addresses=','-c','shared_buffers=16MB','-c','dynamic_shared_memory_type=mmap','-c','max_connections=8','-c','max_worker_processes=0','-c','autovacuum=off','-c','min_wal_size=2MB','-c','max_wal_size=8MB','-c','timezone=UTC','-c','log_timezone=UTC','-c','log_statement=none','-c','log_min_error_statement=panic','-c','log_error_verbosity=terse','-c','log_min_messages=panic','-c','log_parameter_max_length_on_error=0'],{env:environment('postgres'),cwd:'/scratch',stdio:['ignore',fd,fd]});fs.closeSync(fd);return instance;
+ }
+ let server=launchServer();
  t.after(()=>{run(PG+'pg_ctl',['-D','/scratch/cluster','stop','-m','fast','-w','-t','5'],{db:'postgres',check:false,timeout:8000});server.kill('SIGTERM');});
  let ready=false;for(let i=0;i<60;i++){if(run(PG+'pg_isready',['-q'],{db:'postgres',check:false,timeout:1000}).status===0){ready=true;break;}await new Promise(r=>setTimeout(r,50));}assert.ok(ready);
  run(PG+'createdb',[DB],{db:'postgres'});fs.writeFileSync('/scratch/mcp-cluster-id',run(PSQL,['-X','-w','-qAt','-c','select system_identifier::text from pg_control_system()'],{db:'postgres'}).stdout,{mode:0o400});
@@ -142,6 +145,10 @@ test('five MCP reads backed by isolated PostgreSQL authorization and RLS',{timeo
   const first=await handler(request(token));assert.equal((await first.json()).result.isError,false);const before=s.calls();jwt.revokeToken(firstId);
   await assert.rejects(s.service.call('vaidosa_stock_list'));assert.equal((await handler(request(token))).status,401);assert.equal(s.calls(),before);
   const fresh=await handler(request(await sign(randomUUID())));assert.equal((await fresh.json()).result.structuredContent.items.length,3);
+ });
+ await require('./support/shared-revocation-cases.cjs')(t,{sql,file,now,id,service,ROOT,
+  stopServer:async()=>{run(PG+'pg_ctl',['-D','/scratch/cluster','stop','-m','fast','-w','-t','5'],{db:'postgres',timeout:8000});server.kill('SIGTERM');},
+  startServer:async()=>{server=launchServer();let started=false;for(let i=0;i<60;i++){if(run(PG+'pg_isready',['-q'],{db:'postgres',check:false,timeout:1000}).status===0){started=true;break;}await new Promise(r=>setTimeout(r,50));}assert.ok(started,'same private PostgreSQL cluster must restart');}
  });
  console.log('POSTGRES_MCP_TERMINAL '+JSON.stringify({source:SOURCE,store:STORE,postgres:sql('show server_version').stdout.trim(),production_access:false,real_identity:false,roles_ephemeral:true}));
 });

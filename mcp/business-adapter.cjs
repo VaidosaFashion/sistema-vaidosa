@@ -2,7 +2,7 @@
 // Business read boundary over a narrow, injected canonical snapshot gateway.
 // No SDK client, URL, credential, SQL executor, environment or network is loaded.
 const {randomBytes,createHash}=require('node:crypto');
-const {requireVerifiedPrincipal,canonicalHttps}=require('./http-identity.cjs');
+const {requireVerifiedPrincipal,requireVerifiedPrincipalAsync,hasSharedAuthorization,canonicalHttps}=require('./http-identity.cjs');
 const {ToolError}=require('./service.cjs');
 const {requireUUID,requireDate,isEffectiveMovement}=require('../modules/accounts-domain.js');
 const {moneyToCents}=require('../modules/reporting-domain.js');
@@ -40,13 +40,22 @@ function createBusinessReadAdapter({gateway,store,resource,issuer,timeZone,now=D
   return principal.customerIds===null?null:principal.customerIds.map(requireUUID);
  }
  const customerAllowed=(ids,id)=>ids===null||id!==null&&ids.includes(id);
+ function authorizeFresh(principal,permission,signal){
+  const customers=authorize(principal,permission);
+  if(!hasSharedAuthorization(principal))return customers;
+  return requireVerifiedPrincipalAsync(principal,{issuer,resource,now,signal}).then(()=>{authorize(principal,permission);return customers;});
+ }
  async function read(kind,principal,query,permission,maxRows){
   const customers=authorize(principal,permission);query.signal?.throwIfAborted();if(inFlight>=4)throw unavailable();
   const controller=new AbortController(),abort=()=>controller.abort();query.signal?.addEventListener('abort',abort,{once:true});
   if(query.signal?.aborted)controller.abort();const timer=setTimeout(abort,timeoutMs);
   const plan=freeze({...PLANS[kind],version:VERSION,identity:{subject:principal.id,store,customerIds:customers},filters:structuredClone(query.filters||{}),page:{limit:maxRows,continuation:query.continuation??null,snapshot:query.snapshot??null},maxResponseBytes:262144});
   let onAbort;const stopped=new Promise((_,reject)=>{onAbort=()=>reject(unavailable());if(controller.signal.aborted)onAbort();else controller.signal.addEventListener('abort',onAbort,{once:true});});
-  inFlight++;const work=Promise.resolve().then(()=>{controller.signal.throwIfAborted();return gateway.readSnapshot(plan,Object.freeze({signal:controller.signal,principal}));}).finally(()=>{inFlight--;});
+  inFlight++;const work=Promise.resolve().then(async()=>{
+   controller.signal.throwIfAborted();await authorizeFresh(principal,permission,controller.signal);
+   const value=await gateway.readSnapshot(plan,Object.freeze({signal:controller.signal,principal}));
+   await authorizeFresh(principal,permission,controller.signal);return value;
+  }).finally(()=>{inFlight--;});
   try{
    const result=await Promise.race([work,stopped]);controller.signal.throwIfAborted();authorize(principal,permission);
    plain(result,['version','subject','store','snapshot','next','complete','data']);
@@ -68,7 +77,7 @@ function createBusinessReadAdapter({gateway,store,resource,issuer,timeZone,now=D
   return {rows:mapped.map(x=>x.dto),snapshot:result.snapshot,next:result.next,head:mapped[0]?.position??null,tail:mapped.at(-1)?.position??null,ids:[...ids]};
  }
  return Object.freeze({mode:'business-readonly',contractVersion:2,fixture:gateway.fixture,resource,issuer,store,
-  authorize,
+  authorize,authorizeFresh,
   listStock:(p,q)=>page('stock',p,q,row=>{plain(row,PLANS.stock.fields);const id=requireUUID(row.id);return {dto:{productId:id,name:text(row.name),size:text(row.size,20),color:text(row.color_name,80),available:count(row.stock)},position:{time:null,id}};}),
   listCustomerOrders:async(p,q)=>{
    const ids=authorize(p,'sales:read'),id=requireUUID(q.customerId);if(!customerAllowed(ids,id))return null;

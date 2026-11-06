@@ -26,13 +26,16 @@ function createIdentityBoundary({resource,issuer,verifyAccessToken,authorizePrin
     !Array.isArray(claims.scopes)||claims.scopes.length>64||claims.scopes.some(s=>typeof s!=='string'))throw new AccessError(401,'invalid_token');
   if(!claims.scopes.includes('mcp:read'))throw new AccessError(403,'insufficient_scope');
   const assertCurrent=typeof claims.assertCurrent==='function'?claims.assertCurrent:null;
+  const assertAuthorized=typeof claims.assertAuthorized==='function'?claims.assertAuthorized:null;
   try{assertCurrent?.();}catch{throw new AccessError(401,'invalid_token');}
+  try{await assertAuthorized?.(Object.freeze({signal}));}catch{throw new AccessError(401,'invalid_token');}
   let grant;
   // Never pass the bearer token to the business adapter, service, logs, or upstream API.
   try{grant=await authorizePrincipal(Object.freeze({subject:claims.subject,issuer,audience:resource,scopes:Object.freeze([...claims.scopes])}),signal);}
   catch{signal?.throwIfAborted();throw new AccessError(403,'access_denied');}
   signal?.throwIfAborted();
   try{assertCurrent?.();}catch{throw new AccessError(401,'invalid_token');}
+  try{await assertAuthorized?.(Object.freeze({signal}));signal?.throwIfAborted();assertCurrent?.();}catch{throw new AccessError(401,'invalid_token');}
   if(!grant||grant.active!==true||grant.id!==claims.subject||typeof grant.store!=='string'||!/^[A-Za-z0-9:_-]{1,128}$/.test(grant.store)||!Array.isArray(grant.permissions))throw new AccessError(403,'access_denied');
   const allowed=READ_SCOPES.filter(p=>grant.permissions.includes(p));
   if(!allowed.length)throw new AccessError(403,'access_denied');
@@ -40,7 +43,7 @@ function createIdentityBoundary({resource,issuer,verifyAccessToken,authorizePrin
   if(!permissions.length)throw new AccessError(403,'insufficient_scope',['mcp:read',allowed[0]]);
   if(grant.customerIds!==null&&(!Array.isArray(grant.customerIds)||grant.customerIds.length>100||grant.customerIds.some(v=>typeof v!=='string'||!/^[A-Za-z0-9:_-]{1,128}$/.test(v))))throw new AccessError(403,'access_denied');
   const principal=Object.freeze({id:grant.id,store:grant.store,permissions:Object.freeze(permissions),customerIds:grant.customerIds===null?null:Object.freeze([...new Set(grant.customerIds)].sort())});
-  verified.set(principal,Object.freeze({issuer,resource,expiresAt:claims.expiresAt,assertCurrent}));
+  verified.set(principal,Object.freeze({issuer,resource,expiresAt:claims.expiresAt,assertCurrent,assertAuthorized}));
   return principal;
  }});
 }
@@ -50,4 +53,10 @@ function requireVerifiedPrincipal(principal,{issuer,resource,now=Date.now}={}){
  try{proof.assertCurrent?.();}catch{throw new AccessError(403,'access_denied');}
  return principal;
 }
-module.exports={createIdentityBoundary,requireVerifiedPrincipal,AccessError,canonicalHttps,READ_SCOPES};
+function hasSharedAuthorization(principal){return typeof verified.get(principal)?.assertAuthorized==='function';}
+async function requireVerifiedPrincipalAsync(principal,options={}){
+ requireVerifiedPrincipal(principal,options);options.signal?.throwIfAborted();
+ try{await verified.get(principal).assertAuthorized?.(Object.freeze({signal:options.signal}));}catch{throw new AccessError(403,'access_denied');}
+ options.signal?.throwIfAborted();return requireVerifiedPrincipal(principal,options);
+}
+module.exports={createIdentityBoundary,requireVerifiedPrincipal,requireVerifiedPrincipalAsync,hasSharedAuthorization,AccessError,canonicalHttps,READ_SCOPES};

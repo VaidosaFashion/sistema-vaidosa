@@ -1,7 +1,7 @@
 'use strict';
 // Test-only executor. Fixed private socket/database; no URL, secrets or ambient PG.
 const fs=require('node:fs'),cp=require('node:child_process');
-const {requireVerifiedPrincipal}=require('../../mcp/http-identity.cjs');
+const {requireVerifiedPrincipalAsync}=require('../../mcp/http-identity.cjs');
 const DB='vaidosa_mcp_read_fixture',SOCKET='/scratch/mcp-socket',PSQL='/usr/lib/postgresql/17/bin/psql';
 const subject=n=>'77000000-0000-4000-8000-'+String(n).padStart(12,'0');
 const ROLES=Object.freeze(Object.fromEntries(['manager','alice','bob','stock','inactive','finance'].map((x,i)=>[subject(i+1),'mcp_fixture_'+x])));
@@ -31,9 +31,9 @@ async function fixtureReadAs(role,request,{signal}={}){
 }
 function createFixtureExecutor({resource,issuer,now=Date.now}={}){
  return async(request,context)=>{
-  const principal=requireVerifiedPrincipal(context?.principal,{resource,issuer,now});const role=ROLES[principal.id];
+  const principal=await requireVerifiedPrincipalAsync(context?.principal,{resource,issuer,now,signal:context?.signal});const role=ROLES[principal.id];
   if(!role||request.subject!==principal.id||principal.store!=='fixture_store')throw Error('Fixture principal required');
-  return fixtureReadAs(role,request,context);
+  const result=await fixtureReadAs(role,request,context);await requireVerifiedPrincipalAsync(principal,{resource,issuer,now,signal:context?.signal});return result;
  };
 }
 module.exports={createFixtureExecutor,fixtureReadAs,environment,DB,SOCKET,PSQL,ROLES,subject};

@@ -25,9 +25,9 @@ function createBusinessReadService({adapter,principal,now=Date.now}={}){
   return {items:page.rows,nextCursor};
  }
  return Object.freeze({
-  listTools(context){return tools(current(context)).map(({permission,...t})=>structuredClone({...t,annotations:{readOnlyHint:true,destructiveHint:false,idempotentHint:true,openWorldHint:false}}));},
+  listTools(context){const p=current(context),output=()=>tools(p).map(({permission,...t})=>structuredClone({...t,annotations:{readOnlyHint:true,destructiveHint:false,idempotentHint:true,openWorldHint:false}}));const fresh=adapter.authorizeFresh?.(p,p.permissions[0],context?.signal);return fresh&&typeof fresh.then==='function'?fresh.then(output):output();},
   async call(name,args={},context){
-   const p=current(context),tool=tools(p).find(t=>t.name===name);if(!tool)throw new InputError();
+   const p=current(context);await adapter.authorizeFresh?.(p,p.permissions[0],context?.signal);const tool=tools(p).find(t=>t.name===name);if(!tool)throw new InputError();
    if(!args||![Object.prototype,null].includes(Object.getPrototypeOf(args))||Object.values(Object.getOwnPropertyDescriptors(args)).some(d=>!Object.hasOwn(d,'value'))||Reflect.ownKeys(args).some(k=>typeof k!=='string'))throw new InputError();validateArgs(tool.inputSchema,args);
    let result;
    if(name==='vaidosa_stock_list')result=await paginate(name,args,p,context,q=>adapter.listStock(p,q));
@@ -38,7 +38,7 @@ function createBusinessReadService({adapter,principal,now=Date.now}={}){
     result={from:args.from,to:args.to,dateBasis:'paid_on_inclusive_civil_date',sourceDomain:'sale_payments',...await adapter.summarizeReceipts(p,{...args,signal:context?.signal}),excludes:['manual_accounts','bank_reconciliation']};
    }
    if(name==='vaidosa_accounts_list')result={sourceDomain:'manual_accounts',valueBasis:'recorded_amount_per_installment',paidBasis:'all_effective_recorded_movements_not_balance',...await paginate(name,args,p,context,q=>adapter.listAccounts(p,{...q,kind:args.kind}))};
-   context?.signal?.throwIfAborted();return projectReadonlyResult(name,{fixture:adapter.fixture,contractVersion:2,currency:'BRL',...result});
+   await adapter.authorizeFresh?.(p,p.permissions[0],context?.signal);context?.signal?.throwIfAborted();return projectReadonlyResult(name,{fixture:adapter.fixture,contractVersion:2,currency:'BRL',...result});
   }
  });
 }

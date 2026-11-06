@@ -94,3 +94,8 @@ aprovados (11 cenários e grupo), usando cliente/core oficiais `2.4.0` por stdio
 contra a fixture desta base. Não adicionou dependências ao aplicativo e não valida
 o adapter de negócio v2 nem clientes Codex/Claude reais. A etapa atual acrescenta
 seu próprio ensaio mock/HTTP em memória, documentado separadamente.
+
+Preparação de identidade e revogação: [JWT offline](../docs/mcp-jwt-offline.md)
+e [revogação compartilhada em PostgreSQL descartável](../docs/mcp-shared-revocation.md).
+O segundo perfil exige checagem assíncrona antes/depois dos dados e um escritor
+administrativo separado. Nenhum dos perfis ativa credenciais ou serviço reais.
