@@ -15,6 +15,10 @@ com RLS, papéis efêmeros e identidade simulada. O gateway é injetável; o ún
 executor fornecido continua em `tests/support`, preso ao socket da fixture. Não é
 conexão ativa à loja. Ver [escopo e reprodução](../docs/mcp-postgres-fixture.md).
 
+Preparação JWT offline: [perfil e limites](../docs/mcp-jwt-offline.md). Assinaturas
+JOSE com chaves inteiramente fictícias foram integradas ao boundary e aos testes
+PG/HTTP. Isso não configura emissor, OAuth, JWKS remoto ou credencial real.
+
 ```sh
 node mcp/server.cjs --fixture
 node mcp/server.cjs --fixture --principal=manager

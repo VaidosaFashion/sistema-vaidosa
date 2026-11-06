@@ -13,6 +13,12 @@ conecta o gateway às tabelas reconstruídas da fixture. A identidade é simulad
 LOGIN local e verificador fictício; não substitui OAuth/JWT criptográfico, RLS real
 implantada ou configuração de clientes. A ativação futura continua pendente.
 
+Preparação seguinte: [JWT offline com chaves fictícias](mcp-jwt-offline.md) verifica
+assinaturas JOSE, claims, rotação e revogação local, inclusive no principal já criado.
+Os avisos anteriores descrevem as etapas originais; agora há verificação
+criptográfica ensaiada com chaves de teste, ainda sem emissor/OAuth real, revogação
+durável ou autenticação real do LOGIN PostgreSQL. Nada foi ativado na loja.
+
 ## Caminho de integração
 
 1. Revisar os resultados fictícios no cliente de teste local. A próxima validação com Codex/Claude deve primeiro apontar para `node <caminho-absoluto>/mcp/server.cjs --fixture`, com escopo seller por padrão. Essa descrição não grava configurações nem confirma suporte de uma versão específica do cliente.

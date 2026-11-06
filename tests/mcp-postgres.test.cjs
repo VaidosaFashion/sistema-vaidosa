@@ -1,5 +1,6 @@
 'use strict';
-const {test}=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),cp=require('node:child_process'),{createHash}=require('node:crypto');
+const {test}=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),cp=require('node:child_process'),{createHash,randomUUID}=require('node:crypto');
+const {createLocalJwtVerifier}=require('../mcp/local-jwt-verifier.cjs');
 const {createIdentityBoundary}=require('../mcp/http-identity.cjs');
 const {createBusinessReadAdapter,readPlans,VERSION}=require('../mcp/business-adapter.cjs');
 const {createBusinessReadService}=require('../mcp/business-service.cjs');
@@ -19,8 +20,8 @@ async function identity(n,extra={}){
  return boundary.authenticate(new Request(RESOURCE,{headers:{authorization:'Bearer fixture-token'}}));
 }
 const request=(n,operation,filters={})=>({mode:'snapshot',source:SOURCE,store:STORE,subject:id(n),operation,customers:policies[n]?.customerIds??null,filters,maxRows:2000,maxBytes:260000});
-async function service(n,extra={}){
- const p=await identity(n,extra);let calls=0;const exec=createFixtureExecutor({resource:RESOURCE,issuer:ISSUER,now});
+async function service(n,extra={},trustedPrincipal=null){
+ const p=trustedPrincipal??await identity(n,extra);let calls=0;const exec=createFixtureExecutor({resource:RESOURCE,issuer:ISSUER,now});
  const gateway=createPostgresReadGateway({sourceId:SOURCE,store:STORE,resource:RESOURCE,issuer:ISSUER,executeRead:async(q,c)=>{calls++;return exec(q,c);},fixture:true,now});
  const adapter=createBusinessReadAdapter({gateway,store:STORE,resource:RESOURCE,issuer:ISSUER,timeZone:'America/Sao_Paulo',now});
  return {p,gateway,adapter,service:createBusinessReadService({adapter,principal:p,now}),calls:()=>calls};
@@ -124,6 +125,23 @@ test('five MCP reads backed by isolated PostgreSQL authorization and RLS',{timeo
   const fingerprint=()=>sql("select md5((select jsonb_agg(to_jsonb(t) order by id)::text from public.sales t)||(select jsonb_agg(to_jsonb(t) order by id)::text from public.products t)||(select jsonb_agg(to_jsonb(t) order by id)::text from public.contas t));select last_value,is_called from public.product_barcode_seq").stdout;
   const before=fingerprint(),s=await service(1);await s.service.call('vaidosa_sale_get',{saleId:id(40)});await s.service.call('vaidosa_accounts_list');await s.service.call('vaidosa_stock_list');assert.equal(fingerprint(),before);
   const log=fs.readFileSync('/scratch/postgres.log','utf8');assert.ok(!log.includes('PRIVATE_'));assert.ok(!log.includes('fixture-token'));
+ });
+ await t.test('real JOSE signatures from ephemeral keys bind all five PG reads and revoke cached identity',async()=>{
+  const jose=await import('jose'),keys=await jose.generateKeyPair('ES256'),pub={...await jose.exportJWK(keys.publicKey),kid:'pg-test-key',alg:'ES256',use:'sig'};
+  const jwt=await createLocalJwtVerifier({jose,issuer:ISSUER,resource:RESOURCE,publicKeys:[pub],maxTokenAgeSeconds:300,now});
+  const claims=jti=>({iss:ISSUER,aud:RESOURCE,sub:id(1),jti,iat:Math.floor(now()/1000),exp:Math.floor(now()/1000)+60,scope:'mcp:read stock:read sales:read finance:read'});
+  const sign=jti=>new jose.SignJWT(claims(jti)).setProtectedHeader({alg:'ES256',typ:'at+jwt',kid:pub.kid}).sign(keys.privateKey);
+  const firstId=randomUUID(),token=await sign(firstId),authorizePrincipal=async()=>({active:true,id:id(1),store:STORE,permissions:policies[1].permissions,customerIds:null});
+  const boundary=createIdentityBoundary({issuer:ISSUER,resource:RESOURCE,verifyAccessToken:jwt.verifyAccessToken,authorizePrincipal,now});
+  const p=await boundary.authenticate(new Request(RESOURCE,{headers:{authorization:'Bearer '+token}})),s=await service(1,{},p);
+  assert.equal((await s.service.call('vaidosa_stock_list')).items.length,3);assert.equal((await s.service.call('vaidosa_customer_orders',{customerId:id(10)})).items.length,2);
+  assert.equal((await s.service.call('vaidosa_sale_get',{saleId:id(40)})).totalCents,10000);assert.equal((await s.service.call('vaidosa_accounts_list')).items.length,3);
+  assert.equal((await s.service.call('vaidosa_receipts_summary',{from:'2026-11-01',to:'2026-11-30'})).receivedCents,30000);
+  const handler=createStreamableHttpHandler({issuer:ISSUER,resource:RESOURCE,verifyAccessToken:jwt.verifyAccessToken,authorizePrincipal,now,createService:principal=>createBusinessReadService({adapter:s.adapter,principal,now})});
+  const request=access=>new Request(RESOURCE,{method:'POST',headers:{authorization:'Bearer '+access,'content-type':'application/json',accept:'application/json, text/event-stream','mcp-protocol-version':PROTOCOL},body:JSON.stringify({jsonrpc:'2.0',id:1,method:'tools/call',params:{name:'vaidosa_stock_list',arguments:{}}})});
+  const first=await handler(request(token));assert.equal((await first.json()).result.isError,false);const before=s.calls();jwt.revokeToken(firstId);
+  await assert.rejects(s.service.call('vaidosa_stock_list'));assert.equal((await handler(request(token))).status,401);assert.equal(s.calls(),before);
+  const fresh=await handler(request(await sign(randomUUID())));assert.equal((await fresh.json()).result.structuredContent.items.length,3);
  });
  console.log('POSTGRES_MCP_TERMINAL '+JSON.stringify({source:SOURCE,store:STORE,postgres:sql('show server_version').stdout.trim(),production_access:false,real_identity:false,roles_ephemeral:true}));
 });

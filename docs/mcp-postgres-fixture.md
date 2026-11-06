@@ -1,5 +1,9 @@
 # MCP com PostgreSQL — integração somente fictícia
 
+Atualização: o cenário adicional de [JWT offline](mcp-jwt-offline.md) usa
+assinaturas JOSE com chaves de teste. A descrição abaixo também preserva os cenários
+originais de identidade simulada; o LOGIN trust do PG continua fictício em todos.
+
 Preparação local sobre `9293412`. As cinco consultas existentes agora podem passar
 pelo novo `mcp/postgres-read-gateway.cjs` e pelo PostgreSQL descartável dos testes.
 Transporte, ferramentas e DTO v2 existentes foram reutilizados. Não há servidor

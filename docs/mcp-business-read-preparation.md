@@ -24,7 +24,9 @@ novo ao serviço em cache; alteração de loja, permissões ou clientes não rea
 essa sessão. A lista de clientes é ordenada/deduplicada para que a mesma autorização
 em outra ordem preserve a paginação. Uma revogação durante uma leitura em curso
 ainda exige política de backend: o grant é reavaliado na requisição seguinte, não
-continuamente. O verificador injetado **não é** validação criptográfica implementada.
+continuamente. Nesta etapa original o verificador era somente injetado. A
+[preparação JWT posterior](mcp-jwt-offline.md) acrescenta verificação criptográfica
+offline com chaves de teste; nenhum provedor real foi configurado.
 
 O modelo só escolhe uma das cinco ferramentas e seus argumentos declarados.
 `role`, loja, URL, SQL, filtros livres e credenciais são rejeitados. O token nunca
