@@ -150,5 +150,6 @@ test('five MCP reads backed by isolated PostgreSQL authorization and RLS',{timeo
   stopServer:async()=>{run(PG+'pg_ctl',['-D','/scratch/cluster','stop','-m','fast','-w','-t','5'],{db:'postgres',timeout:8000});server.kill('SIGTERM');},
   startServer:async()=>{server=launchServer();let started=false;for(let i=0;i<60;i++){if(run(PG+'pg_isready',['-q'],{db:'postgres',check:false,timeout:1000}).status===0){started=true;break;}await new Promise(r=>setTimeout(r,50));}assert.ok(started,'same private PostgreSQL cluster must restart');}
  });
+ await require('./support/mcp-e2e-cases.cjs')(t,{sql,now,id});
  console.log('POSTGRES_MCP_TERMINAL '+JSON.stringify({source:SOURCE,store:STORE,postgres:sql('show server_version').stdout.trim(),production_access:false,real_identity:false,roles_ephemeral:true}));
 });
